@@ -132,9 +132,12 @@ Serialized via custom binary codec (`internal/storage/codec.go`), not JSON.
 
 ## Build & Test
 
+Development is **test-driven** (TDD): add or extend tests before production code; target high package coverage (see [.cursor/plans/laightdb_context_database_522a216f.plan.md](.cursor/plans/laightdb_context_database_522a216f.plan.md)).
+
 ```bash
 go build ./cmd/laightdb              # Build binary
 go test ./...                        # Run all tests
+go test -cover ./...                 # Coverage summary per package
 go test -race ./...                  # Race detector
 go vet ./...                         # Static analysis
 go tool golangci-lint run            # Linter
@@ -144,6 +147,8 @@ docker compose build                 # Build production image
 docker compose up -d                 # Run production
 docker compose --profile dev up laightdb-dev  # Dev with hot reload
 ```
+
+**Implementation plan:** [.cursor/plans/laightdb_context_database_522a216f.plan.md](.cursor/plans/laightdb_context_database_522a216f.plan.md)
 
 ## Do NOT
 
