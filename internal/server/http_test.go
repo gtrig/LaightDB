@@ -293,3 +293,83 @@ func TestAuthStatus(t *testing.T) {
 		t.Fatal("should not require auth with no users")
 	}
 }
+
+func TestStressQueriesOpenMode(t *testing.T) {
+	t.Parallel()
+	s, as := newTestServer(t)
+	h := testHandler(s, as)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/stress/queries", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("queries: %d %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Queries []string `json:"queries"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil || len(out.Queries) == 0 {
+		t.Fatalf("decode: %v queries=%v", err, out.Queries)
+	}
+}
+
+func TestStressRunOpenMode(t *testing.T) {
+	t.Parallel()
+	s, as := newTestServer(t)
+	h := testHandler(s, as)
+
+	body := `{"collection":"tstress","writes":2,"write_concurrency":1,"searches":3,"search_concurrency":1,"top_k":5,"detail":"summary"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/stress", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stress: %d %s", rec.Code, rec.Body.String())
+	}
+	var rep struct {
+		BaseURL    string `json:"base_url"`
+		Writes     struct{ OK int `json:"ok"` } `json:"writes"`
+		Searches   struct{ OK int `json:"ok"` } `json:"searches"`
+		TotalWall  int64  `json:"total_wall"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.BaseURL != "in-process" || rep.Writes.OK != 2 || rep.Searches.OK != 3 {
+		t.Fatalf("report: %+v", rep)
+	}
+}
+
+func TestStressRunForbiddenForReadOnly(t *testing.T) {
+	t.Parallel()
+	s, as := newTestServer(t)
+	h := testHandler(s, as)
+	ctx := t.Context()
+
+	_, _ = as.CreateUser(ctx, "admin", "pass", auth.RoleAdmin)
+	_, _ = as.CreateUser(ctx, "reader", "pass", auth.RoleReadOnly)
+
+	loginBody := `{"username":"reader","password":"pass"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", strings.NewReader(loginBody))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %d", rec.Code)
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == auth.SessionCookieName {
+			sessionCookie = c
+		}
+	}
+
+	stressBody := `{"writes":1,"searches":0}`
+	req = httptest.NewRequest(http.MethodPost, "/v1/stress", strings.NewReader(stressBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(sessionCookie)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d %s", rec.Code, rec.Body.String())
+	}
+}

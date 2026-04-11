@@ -32,6 +32,9 @@ func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPSer
 	m.HandleFunc("GET /v1/stats", s.handleStats)
 	m.HandleFunc("GET /v1/health", s.handleHealth)
 
+	m.HandleFunc("GET /v1/stress/queries", s.handleGetStressQueries)
+	m.HandleFunc("POST /v1/stress", s.handlePostStress)
+
 	// Auth routes
 	m.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	m.HandleFunc("POST /v1/auth/logout", s.handleLogout)

@@ -1,4 +1,15 @@
-import type { ContextEntry, SearchResult, StatsResponse, DetailLevel, EntryListItem, UserInfo, APITokenInfo, AuthStatus, UserRole } from "./types";
+import type {
+  ContextEntry,
+  SearchResult,
+  StatsResponse,
+  DetailLevel,
+  EntryListItem,
+  UserInfo,
+  APITokenInfo,
+  AuthStatus,
+  UserRole,
+  StressReport,
+} from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -78,6 +89,27 @@ export async function searchContexts(body: {
 
 export async function compactCollection(name: string): Promise<void> {
   return request(`/v1/collections/${encodeURIComponent(name)}/compact`, { method: "POST" });
+}
+
+export async function getStressQueries(): Promise<string[]> {
+  const data = await request<{ queries: string[] }>("/v1/stress/queries");
+  return data.queries ?? [];
+}
+
+export async function runStress(body: {
+  collection?: string;
+  writes: number;
+  write_concurrency: number;
+  searches: number;
+  search_concurrency: number;
+  top_k: number;
+  detail: string;
+}): Promise<StressReport> {
+  return request("/v1/stress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 // --- Auth ---

@@ -8,6 +8,7 @@ import ContextDetail from "./components/ContextDetail";
 import CollectionsPage from "./components/CollectionsPage";
 import CollectionBrowse from "./components/CollectionBrowse";
 import SystemPage from "./components/SystemPage";
+import StressPage from "./components/StressPage";
 import LoginPage from "./components/LoginPage";
 import UsersPage from "./components/UsersPage";
 import TokensPage from "./components/TokensPage";
@@ -84,6 +85,14 @@ export default function App() {
         <Route path="collections" element={<CollectionsPage />} />
         <Route path="collections/:name" element={<CollectionBrowse />} />
         <Route path="system" element={<SystemPage />} />
+        <Route
+          path="stress"
+          element={
+            <RequireAdminOrBootstrap>
+              <StressPage />
+            </RequireAdminOrBootstrap>
+          }
+        />
         <Route path="contexts/:id" element={<ContextDetail />} />
         <Route
           path="settings/users"

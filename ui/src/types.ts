@@ -70,3 +70,23 @@ export interface APITokenInfo {
 export interface AuthStatus {
   auth_required: boolean;
 }
+
+/** JSON durations are nanoseconds (Go time.Duration). */
+export interface StressPhaseStat {
+  requested: number;
+  ok: number;
+  errors: number;
+  wall: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  ops_per_sec: number;
+}
+
+export interface StressReport {
+  base_url: string;
+  collection: string;
+  writes: StressPhaseStat;
+  searches: StressPhaseStat;
+  total_wall: number;
+}

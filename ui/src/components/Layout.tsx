@@ -120,6 +120,7 @@ export default function Layout() {
 
   // Open mode (no users yet): show Users so the first admin can be created without logging in.
   const showUsersNav = !authRequired || user?.role === "admin";
+  const showStressNav = showUsersNav;
   const showTokensNav = !!user;
   const showSettingsSection = showUsersNav || showTokensNav;
 
@@ -169,6 +170,15 @@ export default function Layout() {
             <NavIcon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             System
           </NavLink>
+          {showStressNav && (
+            <NavLink
+              to="/stress"
+              style={({ isActive }) => ({ ...baseLinkStyle, ...(isActive ? activeLinkExtra : {}) })}
+            >
+              <NavIcon d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              Stress test
+            </NavLink>
+          )}
 
           {showSettingsSection && <div style={sectionTitleStyle}>Settings</div>}
           {showUsersNav && (
