@@ -1,0 +1,6 @@
+[build]
+cmd = "go build -o /tmp/laightdb ./cmd/laightdb"
+bin = "/tmp/laightdb"
+include_ext = ["go"]
+exclude_dir = ["data", ".git", ".cursor"]
+delay = 1000

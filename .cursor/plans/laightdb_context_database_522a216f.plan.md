@@ -4,31 +4,31 @@ overview: Build LaightDB using strict TDD and high test coverage — AI context 
 todos:
   - id: phase0-setup
     content: "Phase 0: go.mod (1.26 + tool directives), coverage Makefile targets, scaffold dirs; optional golangci coverage threshold"
-    status: pending
+    status: completed
   - id: phase1-storage
     content: "Phase 1 (TDD): Storage engine — tests first per component; skiplist through compaction + codec; race + coverage"
-    status: pending
+    status: completed
   - id: phase2-indexing
     content: "Phase 2 (TDD): Indexing — BM25, vector wrapper, metadata, hybrid RRF; table-driven + coverage"
-    status: pending
+    status: completed
   - id: phase3-context
     content: "Phase 3 (TDD): Context layer — tokens, store, chunker, dedup, tiered, embedding; fakes for IO where needed"
-    status: pending
+    status: completed
   - id: phase4-summarize
     content: "Phase 4 (TDD): Summarizers — httptest servers for OpenAI/Anthropic/Ollama; noop tests"
-    status: pending
+    status: completed
   - id: phase5-api
     content: "Phase 5 (TDD): HTTP server — integration tests per route; httptest; high coverage on handlers"
-    status: pending
+    status: completed
   - id: phase6-mcp
     content: "Phase 6 (TDD): MCP stdio + HTTP; gate tests store_context/search_context/get_context; MCP integration test"
-    status: pending
+    status: completed
   - id: phase7-binary
     content: "Phase 7: Thin main, config tests, Makefile (test, test-race, test-cover, cover-html)"
-    status: pending
+    status: completed
   - id: phase8-docker
     content: "Phase 8: Dockerfiles + compose; CI runs tests + coverage in image build or pipeline"
-    status: pending
+    status: completed
 isProject: true
 ---
 
