@@ -68,7 +68,17 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 				IsError: true,
 			}, emptyOut{}, nil
 		}
-		b, _ := json.Marshal(map[string]any{"hits": hits})
+		totalTokens, totalCompact := 0, 0
+		for _, h := range hits {
+			totalTokens += h.TokenCount
+			totalCompact += h.CompactTokenCount
+		}
+		b, _ := json.Marshal(map[string]any{
+			"hits":                hits,
+			"total_token_count":   totalTokens,
+			"total_compact_count": totalCompact,
+			"total_tokens_saved":  totalTokens - totalCompact,
+		})
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 

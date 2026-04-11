@@ -160,8 +160,18 @@ func (s *HTTPServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	totalTokens, totalCompact := 0, 0
+	for _, h := range hits {
+		totalTokens += h.TokenCount
+		totalCompact += h.CompactTokenCount
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"hits": hits})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"hits":                hits,
+		"total_token_count":   totalTokens,
+		"total_compact_count": totalCompact,
+		"total_tokens_saved":  totalTokens - totalCompact,
+	})
 }
 
 func (s *HTTPServer) handleCollections(w http.ResponseWriter, r *http.Request) {

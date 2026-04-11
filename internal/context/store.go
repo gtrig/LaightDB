@@ -119,18 +119,21 @@ func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 		sum = summarize.Noop()
 	}
 	summary, _ := sum.Summarize(ctx, req.Content)
+	compact := Compact(req.Content)
 	ent := storage.ContextEntry{
-		ID:          id,
-		Collection:  req.Collection,
-		Content:     req.Content,
-		ContentType: req.ContentType,
-		Summary:     summary,
-		Chunks:      chunks,
-		Metadata:    req.Metadata,
-		Embedding:   emb,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		TokenCount:  EstimateTokens(req.Content),
+		ID:                id,
+		Collection:        req.Collection,
+		Content:           req.Content,
+		CompactContent:    compact,
+		ContentType:       req.ContentType,
+		Summary:           summary,
+		Chunks:            chunks,
+		Metadata:          req.Metadata,
+		Embedding:         emb,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		TokenCount:        EstimateTokens(req.Content),
+		CompactTokenCount: EstimateTokens(compact),
 	}
 	data := storage.Encode(ent)
 	key := docKeyPrefix + id
@@ -197,8 +200,11 @@ type SearchRequest struct {
 
 // SearchResult is one ranked hit.
 type SearchResult struct {
-	ID    string
-	Score float64
+	ID                string  `json:"id"`
+	Score             float64 `json:"score"`
+	TokenCount        int     `json:"token_count"`
+	CompactTokenCount int     `json:"compact_token_count"`
+	TokensSaved       int     `json:"tokens_saved"`
 }
 
 // Search runs BM25 + vector RRF, optional metadata filter.
@@ -253,7 +259,13 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 			continue
 		}
 		seen[ent.ID] = struct{}{}
-		out = append(out, SearchResult{ID: ent.ID, Score: h.Score})
+		out = append(out, SearchResult{
+			ID:                ent.ID,
+			Score:             h.Score,
+			TokenCount:        ent.TokenCount,
+			CompactTokenCount: ent.CompactTokenCount,
+			TokensSaved:       ent.TokenCount - ent.CompactTokenCount,
+		})
 		if len(out) >= req.TopK {
 			break
 		}
@@ -263,12 +275,14 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 
 // EntryListItem is a lightweight row for REST listing.
 type EntryListItem struct {
-	ID          string    `json:"id"`
-	Collection  string    `json:"collection"`
-	ContentType string    `json:"content_type"`
-	TokenCount  int       `json:"token_count"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	Collection        string    `json:"collection"`
+	ContentType       string    `json:"content_type"`
+	TokenCount        int       `json:"token_count"`
+	CompactTokenCount int       `json:"compact_token_count"`
+	TokensSaved       int       `json:"tokens_saved"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // ListEntries returns entries newest-first, optionally filtered by collection.
@@ -295,12 +309,14 @@ func (s *Store) ListEntries(ctx context.Context, collection string, limit int) (
 			continue
 		}
 		out = append(out, EntryListItem{
-			ID:          ent.ID,
-			Collection:  ent.Collection,
-			ContentType: ent.ContentType,
-			TokenCount:  ent.TokenCount,
-			CreatedAt:   ent.CreatedAt,
-			UpdatedAt:   ent.UpdatedAt,
+			ID:                ent.ID,
+			Collection:        ent.Collection,
+			ContentType:       ent.ContentType,
+			TokenCount:        ent.TokenCount,
+			CompactTokenCount: ent.CompactTokenCount,
+			TokensSaved:       ent.TokenCount - ent.CompactTokenCount,
+			CreatedAt:         ent.CreatedAt,
+			UpdatedAt:         ent.UpdatedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

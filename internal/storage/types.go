@@ -12,15 +12,17 @@ type Chunk struct {
 
 // ContextEntry is the persisted document model (binary codec in codec.go).
 type ContextEntry struct {
-	ID          string
-	Collection  string
-	Content     string
-	ContentType string
-	Summary     string
-	Chunks      []Chunk
-	Metadata    map[string]string
-	Embedding   []float32
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	TokenCount  int
+	ID                string
+	Collection        string
+	Content           string
+	CompactContent    string // token-minimized AI-readable version of Content
+	ContentType       string
+	Summary           string
+	Chunks            []Chunk
+	Metadata          map[string]string
+	Embedding         []float32
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	TokenCount        int
+	CompactTokenCount int // token count for CompactContent
 }

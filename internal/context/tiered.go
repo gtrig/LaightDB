@@ -26,13 +26,19 @@ func Project(e storage.ContextEntry, d DetailLevel) map[string]any {
 		"created_at":   e.CreatedAt,
 		"updated_at":   e.UpdatedAt,
 	}
+	if e.CompactTokenCount > 0 {
+		m["compact_token_count"] = e.CompactTokenCount
+		m["tokens_saved"] = e.TokenCount - e.CompactTokenCount
+	}
 	switch d {
 	case DetailFull:
 		m["content"] = e.Content
+		m["compact_content"] = e.CompactContent
 		m["summary"] = e.Summary
 		m["chunks"] = e.Chunks
 	case DetailSummary:
 		m["summary"] = e.Summary
+		m["compact_content"] = e.CompactContent
 	case DetailMetadata:
 	}
 	return m

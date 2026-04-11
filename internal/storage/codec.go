@@ -22,6 +22,8 @@ const (
 	tagCreatedAt
 	tagUpdatedAt
 	tagTokenCount
+	tagCompactContent
+	tagCompactTokenCount
 )
 
 // Encode serializes ContextEntry to binary.
@@ -48,6 +50,10 @@ func Encode(e ContextEntry) []byte {
 	buf = appendTime(buf, tagCreatedAt, e.CreatedAt)
 	buf = appendTime(buf, tagUpdatedAt, e.UpdatedAt)
 	buf = appendVarintTagged(buf, tagTokenCount, uint64(e.TokenCount))
+	if e.CompactContent != "" {
+		buf = appendStringField(buf, tagCompactContent, e.CompactContent)
+		buf = appendVarintTagged(buf, tagCompactTokenCount, uint64(e.CompactTokenCount))
+	}
 	return buf
 }
 
@@ -231,6 +237,19 @@ func Decode(data []byte) (ContextEntry, error) {
 				return e, err
 			}
 			e.TokenCount = int(v)
+			p = np
+		case tagCompactContent:
+			s, np, err := readString(data, p)
+			if err != nil {
+				return e, err
+			}
+			e.CompactContent, p = s, np
+		case tagCompactTokenCount:
+			v, np, err := readUvarint(data, p)
+			if err != nil {
+				return e, err
+			}
+			e.CompactTokenCount = int(v)
 			p = np
 		default:
 			return e, fmt.Errorf("storage: unknown tag %d", tag)
