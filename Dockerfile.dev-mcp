@@ -1,0 +1,16 @@
+# Development-only MCP debugger (streamable HTTP). Not for production exposure.
+FROM golang:1.26-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /laightdb-dev-mcp ./cmd/laightdb-dev-mcp
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /laightdb-dev-mcp /usr/local/bin/laightdb-dev-mcp
+EXPOSE 9090
+VOLUME ["/data"]
+ENV LAIGHTDB_DATA_DIR=/data
+ENV LAIGHTDB_DEV_MCP_HTTP_ADDR=:9090
+ENTRYPOINT ["/usr/local/bin/laightdb-dev-mcp"]

@@ -1,7 +1,10 @@
-import type { ContextEntry, SearchResult, StatsResponse, DetailLevel, EntryListItem } from "./types";
+import type { ContextEntry, SearchResult, StatsResponse, DetailLevel, EntryListItem, UserInfo, APITokenInfo, AuthStatus, UserRole } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, {
+    ...init,
+    credentials: "include",
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
@@ -75,4 +78,80 @@ export async function searchContexts(body: {
 
 export async function compactCollection(name: string): Promise<void> {
   return request(`/v1/collections/${encodeURIComponent(name)}/compact`, { method: "POST" });
+}
+
+// --- Auth ---
+
+export async function getAuthStatus(): Promise<AuthStatus> {
+  return request("/v1/auth/status");
+}
+
+export async function login(username: string, password: string): Promise<{ user: UserInfo }> {
+  return request("/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  return request("/v1/auth/logout", { method: "POST" });
+}
+
+export async function getMe(): Promise<{ user: UserInfo }> {
+  return request("/v1/auth/me");
+}
+
+// --- Users ---
+
+export async function listUsers(): Promise<UserInfo[]> {
+  const data = await request<{ users: UserInfo[] }>("/v1/users");
+  return data.users ?? [];
+}
+
+export async function createUser(username: string, password: string, role: UserRole): Promise<{ user: UserInfo }> {
+  return request("/v1/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, role }),
+  });
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  return request(`/v1/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function changePassword(id: string, password: string): Promise<void> {
+  return request(`/v1/users/${encodeURIComponent(id)}/password`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function changeRole(id: string, role: UserRole): Promise<void> {
+  return request(`/v1/users/${encodeURIComponent(id)}/role`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+}
+
+// --- Tokens ---
+
+export async function listTokens(): Promise<APITokenInfo[]> {
+  const data = await request<{ tokens: APITokenInfo[] }>("/v1/tokens");
+  return data.tokens ?? [];
+}
+
+export async function createToken(name: string, role: UserRole): Promise<{ token: string; id: string; name: string; prefix: string; role: UserRole; created_at: string }> {
+  return request("/v1/tokens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, role }),
+  });
+}
+
+export async function revokeToken(id: string): Promise<void> {
+  return request(`/v1/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

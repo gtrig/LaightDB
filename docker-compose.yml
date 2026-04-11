@@ -19,6 +19,10 @@ services:
       - LAIGHTDB_OLLAMA_URL=${LAIGHTDB_OLLAMA_URL:-http://host.docker.internal:11434}
       - LAIGHTDB_MEMTABLE_SIZE=${LAIGHTDB_MEMTABLE_SIZE:-4194304}
       - LAIGHTDB_SEARCH_TOP_K=${LAIGHTDB_SEARCH_TOP_K:-10}
+      - LAIGHTDB_BOOTSTRAP_USER=${LAIGHTDB_BOOTSTRAP_USER:-}
+      - LAIGHTDB_SESSION_TTL=${LAIGHTDB_SESSION_TTL:-24h}
+      - LAIGHTDB_RATE_LIMIT_RPS=${LAIGHTDB_RATE_LIMIT_RPS:-100}
+      - LAIGHTDB_RATE_LIMIT_BURST=${LAIGHTDB_RATE_LIMIT_BURST:-200}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -45,8 +49,18 @@ services:
       - LAIGHTDB_OLLAMA_URL=${LAIGHTDB_OLLAMA_URL:-http://host.docker.internal:11434}
       - LAIGHTDB_MEMTABLE_SIZE=${LAIGHTDB_MEMTABLE_SIZE:-4194304}
       - LAIGHTDB_SEARCH_TOP_K=${LAIGHTDB_SEARCH_TOP_K:-10}
+      - LAIGHTDB_BOOTSTRAP_USER=${LAIGHTDB_BOOTSTRAP_USER:-}
+      - LAIGHTDB_SESSION_TTL=${LAIGHTDB_SESSION_TTL:-24h}
+      - LAIGHTDB_RATE_LIMIT_RPS=${LAIGHTDB_RATE_LIMIT_RPS:-100}
+      - LAIGHTDB_RATE_LIMIT_BURST=${LAIGHTDB_RATE_LIMIT_BURST:-200}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # UI nginx proxies to host "laightdb" (see ui/nginx.conf). Prod uses service laightdb;
+    # dev uses laightdb-dev only, so we expose the same DNS name to the UI container.
+    networks:
+      default:
+        aliases:
+          - laightdb
     profiles:
       - dev
 
@@ -68,6 +82,24 @@ services:
       - "${LAIGHTDB_UI_PORT:-3000}:3000"
     depends_on:
       - laightdb-dev
+    profiles:
+      - dev
+
+  # Streamable HTTP dev MCP (debug tools); same /data volume as laightdb-dev. Cursor: url http://localhost:${LAIGHTDB_DEV_MCP_PORT:-9090}/mcp
+  laightdb-dev-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev-mcp
+    ports:
+      - "${LAIGHTDB_DEV_MCP_PORT:-9090}:9090"
+    volumes:
+      - laightdb-dev-data:/data
+    environment:
+      - LAIGHTDB_DATA_DIR=/data
+      - LAIGHTDB_DEV_MCP_HTTP_ADDR=:9090
+      # Do not open the same DB files as laightdb-dev (OpenStore + WAL); file-based debug tools still work.
+      - LAIGHTDB_DEV_MCP_SKIP_STORE=true
+      - LAIGHTDB_MEMTABLE_SIZE=${LAIGHTDB_MEMTABLE_SIZE:-4194304}
     profiles:
       - dev
 

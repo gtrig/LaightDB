@@ -1,4 +1,10 @@
 :root {
+  /* Stitch “Teal Obsidian” / Architectural Obsidian (login + settings screens, project 8721321444339603457) */
+  --stitch-surface: #0b1326;
+  --stitch-card: #111b33;
+  --stitch-input: #0d1629;
+  --stitch-gradient-end: #4fb8ad;
+
   --surface: #0d1518;
   --surface-dim: #0d1518;
   --surface-bright: #323a3e;

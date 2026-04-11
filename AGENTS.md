@@ -7,6 +7,7 @@ AI context database written in Go. Stores, searches, and retrieves context with 
 ```
 LaightDB/
   cmd/laightdb/main.go           # Entry point (thin: wire deps, start server)
+  cmd/laightdb-dev-mcp/main.go   # Dev-only MCP stdio (debug data dir; not for production exposure)
   internal/
     config/config.go             # Env + flag configuration (no config file)
     storage/                     # Custom LSM-tree storage engine
@@ -36,15 +37,27 @@ LaightDB/
       anthropic.go               # Anthropic provider
       ollama.go                  # Ollama provider
       noop.go                    # No-op fallback (default)
+    auth/
+      auth.go                    # Role, User, APIToken, Session types, context helpers
+      store.go                   # FileAuthStore: JSON persistence, user/token/session CRUD
+      middleware.go              # Auth middleware (cookie + bearer, open mode, role enforcement)
+      ratelimit.go               # Token bucket rate limiter (per-user/per-IP)
     server/
       http.go                    # REST API (net/http, no framework)
+      auth_handlers.go           # Auth, user, token management endpoints
       middleware.go              # Logging, recovery
     mcp/
       server.go                  # MCP server setup + transport selection
       tools.go                   # MCP tool definitions
       resources.go               # MCP resource definitions
+    mcpdev/
+      server.go                  # Dev-only MCP: stdio or streamable HTTP (/mcp) via LAIGHTDB_DEV_MCP_HTTP_ADDR
+      http.go                    # ListenAndServeHTTP for local debugging (not for production exposure)
+      tools.go                   # debug_* tools; auth summary without hashes
+      safe.go                    # Path confinement under data directory
   Dockerfile                     # Multi-stage production build
   Dockerfile.dev                 # Dev image with air hot reload
+  Dockerfile.dev-mcp             # Dev MCP only (streamable HTTP :9090, same data volume as dev API)
   docker-compose.yml             # Prod + dev profiles
   .air.toml                      # Hot reload config
   .dockerignore
@@ -64,6 +77,7 @@ Only these external dependencies are approved:
 | `github.com/lee101/gobed` | Built-in text embeddings (1024-dim static model, 119 MB weights) |
 | `github.com/coder/hnsw` | HNSW vector index (in-memory, pure Go, persist/load) |
 | `github.com/google/uuid` | UUID generation |
+| `golang.org/x/crypto/bcrypt` | Password hashing (quasi-stdlib) |
 
 Dev tools (tracked via `tool` directive in go.mod):
 
@@ -121,6 +135,33 @@ Serialized via custom binary codec (`internal/storage/codec.go`), not JSON.
 - `GET    /v1/collections`           -- List collections
 - `POST   /v1/collections/{name}/compact` -- Trigger storage compaction
 - `GET    /v1/health`                -- Health check
+
+### Auth & User Management
+
+- `POST   /v1/auth/login`           -- Login with username/password, sets session cookie
+- `POST   /v1/auth/logout`          -- Clear session cookie
+- `GET    /v1/auth/me`              -- Current user info (from session or token)
+- `GET    /v1/auth/status`          -- Whether auth is required (public)
+- `POST   /v1/users`                -- Create user (first user bootstraps admin without auth)
+- `GET    /v1/users`                -- List users (admin only)
+- `DELETE /v1/users/{id}`           -- Delete user + cascade tokens/sessions (admin only)
+- `PUT    /v1/users/{id}/password`  -- Change password (admin or self)
+- `PUT    /v1/users/{id}/role`      -- Change role (admin only)
+- `POST   /v1/tokens`               -- Create API token (returns plaintext once)
+- `GET    /v1/tokens`               -- List tokens (own for readonly, all for admin)
+- `DELETE /v1/tokens/{id}`          -- Revoke token
+
+## Authentication
+
+Two auth paths:
+- **Web UI:** Username/password login → HTTP-only session cookie (`ldb_session`)
+- **API/MCP:** `Authorization: Bearer <token>` header with API token
+
+**Open mode:** When no users exist, all requests pass through unauthenticated (backward compatible). Creating the first user activates auth.
+
+**Roles:** `admin` (full access) and `readonly` (GET + POST /v1/search only).
+
+Auth data persisted as JSON in `{data_dir}/auth/` (users.json, tokens.json, sessions.json).
 
 ## MCP Tools
 

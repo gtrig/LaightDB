@@ -45,3 +45,28 @@ export interface EntryListItem {
 export type DetailLevel = "metadata" | "summary" | "full";
 
 export type ContentType = "code" | "conversation" | "doc" | "kv";
+
+export type UserRole = "admin" | "readonly";
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface APITokenInfo {
+  id: string;
+  user_id: string;
+  name: string;
+  prefix: string;
+  role: UserRole;
+  created_at: string;
+  active: boolean;
+  revoked_at?: string;
+}
+
+export interface AuthStatus {
+  auth_required: boolean;
+}

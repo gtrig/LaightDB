@@ -5,19 +5,23 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gtrig/laightdb/internal/auth"
 	"github.com/gtrig/laightdb/internal/context"
 )
 
 // HTTPServer wires REST routes to the Store.
 type HTTPServer struct {
-	Store *context.Store
-	Mux   *http.ServeMux
+	Store     *context.Store
+	AuthStore *auth.FileAuthStore
+	Mux       *http.ServeMux
 }
 
 // NewHTTPServer registers v1 routes.
-func NewHTTPServer(store *context.Store) *HTTPServer {
+func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPServer {
 	m := http.NewServeMux()
-	s := &HTTPServer{Store: store, Mux: m}
+	s := &HTTPServer{Store: store, AuthStore: authStore, Mux: m}
+
+	// Context routes
 	m.HandleFunc("POST /v1/contexts", s.handlePostContexts)
 	m.HandleFunc("GET /v1/contexts", s.handleListContexts)
 	m.HandleFunc("GET /v1/contexts/{id}", s.handleGetContext)
@@ -27,11 +31,35 @@ func NewHTTPServer(store *context.Store) *HTTPServer {
 	m.HandleFunc("POST /v1/collections/{name}/compact", s.handleCompact)
 	m.HandleFunc("GET /v1/stats", s.handleStats)
 	m.HandleFunc("GET /v1/health", s.handleHealth)
+
+	// Auth routes
+	m.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	m.HandleFunc("POST /v1/auth/logout", s.handleLogout)
+	m.HandleFunc("GET /v1/auth/me", s.handleMe)
+	m.HandleFunc("GET /v1/auth/status", s.handleAuthStatus)
+
+	// User management routes
+	m.HandleFunc("POST /v1/users", s.handleCreateUser)
+	m.HandleFunc("GET /v1/users", s.handleListUsers)
+	m.HandleFunc("DELETE /v1/users/{id}", s.handleDeleteUser)
+	m.HandleFunc("PUT /v1/users/{id}/password", s.handleChangePassword)
+	m.HandleFunc("PUT /v1/users/{id}/role", s.handleChangeRole)
+
+	// Token management routes
+	m.HandleFunc("POST /v1/tokens", s.handleCreateToken)
+	m.HandleFunc("GET /v1/tokens", s.handleListTokens)
+	m.HandleFunc("DELETE /v1/tokens/{id}", s.handleRevokeToken)
+
 	return s
 }
 
-func (s *HTTPServer) Handler() http.Handler {
-	return recoveryMiddleware(loggingMiddleware(s.Mux))
+// BuildHandler constructs the middleware chain. Called by launch after wiring.
+func (s *HTTPServer) BuildHandler(middlewares ...func(http.Handler) http.Handler) http.Handler {
+	var h http.Handler = s.Mux
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		h = middlewares[i](h)
+	}
+	return recoveryMiddleware(loggingMiddleware(h))
 }
 
 func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {

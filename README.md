@@ -151,6 +151,53 @@ For remote or containerized setups, run with `LAIGHTDB_MCP_TRANSPORT=http` and e
 
 ---
 
+## Authentication
+
+LaightDB starts in **open mode** (no authentication) until the first user is created. Once a user exists, all non-health endpoints require authentication.
+
+### Bootstrap an admin user
+
+Set the environment variable before first start:
+
+```bash
+export LAIGHTDB_BOOTSTRAP_USER=admin:your-secure-password
+```
+
+Or create one via the API (no auth needed when no users exist):
+
+```bash
+curl -X POST http://localhost:8080/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"changeme","role":"admin"}'
+```
+
+### Web UI login
+
+Navigate to the UI and sign in with username/password. A session cookie is set automatically.
+
+### API / MCP authentication
+
+Create an API token through the web UI (Settings → API Tokens) or via the API, then use it:
+
+```bash
+curl -H 'Authorization: Bearer ldb_...' http://localhost:8080/v1/contexts
+```
+
+MCP over HTTP uses the same Bearer token. MCP over stdio remains unauthenticated (local process).
+
+### Rate limiting
+
+Configurable per-user/per-IP token bucket rate limiting (default: 100 rps, burst 200). Returns `429 Too Many Requests` with `Retry-After` header when exceeded.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LAIGHTDB_BOOTSTRAP_USER` | _(empty)_ | Seed admin user on first start (`username:password`) |
+| `LAIGHTDB_SESSION_TTL` | `24h` | Session cookie lifetime |
+| `LAIGHTDB_RATE_LIMIT_RPS` | `100` | Requests per second per key |
+| `LAIGHTDB_RATE_LIMIT_BURST` | `200` | Burst capacity |
+
+---
+
 ## REST API (optional)
 
 Same capabilities as MCP, for scripts and integrations:
@@ -166,6 +213,18 @@ Same capabilities as MCP, for scripts and integrations:
 | `GET` | `/v1/stats` | Database stats (entries, collections, vector nodes) |
 | `POST` | `/v1/collections/{name}/compact` | Request compaction |
 | `GET` | `/v1/health` | Health check |
+| `POST` | `/v1/auth/login` | Login (returns session cookie) |
+| `POST` | `/v1/auth/logout` | Logout (clears session) |
+| `GET` | `/v1/auth/me` | Current user info |
+| `GET` | `/v1/auth/status` | Auth required? (public) |
+| `POST` | `/v1/users` | Create user |
+| `GET` | `/v1/users` | List users |
+| `DELETE` | `/v1/users/{id}` | Delete user |
+| `PUT` | `/v1/users/{id}/password` | Change password |
+| `PUT` | `/v1/users/{id}/role` | Change role |
+| `POST` | `/v1/tokens` | Create API token |
+| `GET` | `/v1/tokens` | List tokens |
+| `DELETE` | `/v1/tokens/{id}` | Revoke token |
 
 Example (once the server is running):
 

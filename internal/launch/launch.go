@@ -2,13 +2,17 @@ package launch
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/gtrig/laightdb/internal/auth"
 	"github.com/gtrig/laightdb/internal/config"
 	lctx "github.com/gtrig/laightdb/internal/context"
 	"github.com/gtrig/laightdb/internal/embedding"
@@ -35,6 +39,15 @@ func Start() error {
 	}
 	defer store.Close()
 
+	authStore, err := auth.NewFileAuthStore(filepath.Join(cfg.DataDir, "auth"), cfg.SessionTTL)
+	if err != nil {
+		return fmt.Errorf("init auth store: %w", err)
+	}
+
+	if err := bootstrapUser(context.Background(), cfg, authStore); err != nil {
+		return fmt.Errorf("bootstrap user: %w", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -45,9 +58,15 @@ func Start() error {
 		return ms.RunStdio(ctx)
 	}
 
-	hs := server.NewHTTPServer(store)
+	rl := auth.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
+
+	hs := server.NewHTTPServer(store, authStore)
 	hs.Mux.Handle("/mcp", ms.StreamableHTTPHandler())
-	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: hs.Handler()}
+	handler := hs.BuildHandler(
+		auth.RateLimitMiddleware(rl),
+		auth.Middleware(authStore),
+	)
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: handler}
 	go func() {
 		slog.Info("http + mcp streamable", "addr", cfg.HTTPAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -58,6 +77,22 @@ func Start() error {
 	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shCtx)
+}
+
+func bootstrapUser(ctx context.Context, cfg *config.Config, store *auth.FileAuthStore) error {
+	if cfg.BootstrapUser == "" || store.UserCount() > 0 {
+		return nil
+	}
+	parts := strings.SplitN(cfg.BootstrapUser, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("LAIGHTDB_BOOTSTRAP_USER must be username:password")
+	}
+	u, err := store.CreateUser(ctx, parts[0], parts[1], auth.RoleAdmin)
+	if err != nil {
+		return err
+	}
+	slog.Info("bootstrap admin created", "username", u.Username)
+	return nil
 }
 
 func pickSummarizer(name string) summarize.Summarizer {

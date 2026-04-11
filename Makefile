@@ -1,7 +1,11 @@
-.PHONY: build test test-race test-cover cover cover-html vet lint fix docker docker-up docker-dev clean
+.PHONY: build build-dev-mcp test test-race test-cover cover cover-html vet lint fix docker docker-up docker-dev clean
 
 build:
 	go build -o laightdb ./cmd/laightdb
+
+# Development-only MCP (stdio): inspect data dir, WAL, auth summary — do not expose to production
+build-dev-mcp:
+	go build -o laightdb-dev-mcp ./cmd/laightdb-dev-mcp
 
 test:
 	go test ./...
@@ -39,4 +43,4 @@ docker-dev:
 	docker compose --profile dev up laightdb-dev
 
 clean:
-	rm -f laightdb coverage.out coverage.html
+	rm -f laightdb laightdb-dev-mcp coverage.out coverage.html

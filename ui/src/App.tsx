@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./hooks/useAuth";
 import Layout from "./components/Layout";
 import Dashboard from "./components/Dashboard";
 import SearchPanel from "./components/SearchPanel";
@@ -7,11 +8,76 @@ import ContextDetail from "./components/ContextDetail";
 import CollectionsPage from "./components/CollectionsPage";
 import CollectionBrowse from "./components/CollectionBrowse";
 import SystemPage from "./components/SystemPage";
+import LoginPage from "./components/LoginPage";
+import UsersPage from "./components/UsersPage";
+import TokensPage from "./components/TokensPage";
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { user, authRequired, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)" }}>
+        Loading…
+      </div>
+    );
+  }
+  if (authRequired && !user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+/** User management: admins always; in open mode (no users yet) anyone can open to bootstrap the first account. */
+function RequireAdminOrBootstrap({ children }: { children: React.ReactNode }) {
+  const { user, authRequired, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)" }}>
+        Loading…
+      </div>
+    );
+  }
+  if (!authRequired) return children;
+  if (!user || user.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
+/** API tokens require a logged-in user; in open mode, send users to bootstrap first. */
+function RequireUserForTokens({ children }: { children: React.ReactNode }) {
+  const { user, authRequired, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)" }}>
+        Loading…
+      </div>
+    );
+  }
+  if (user) return children;
+  if (authRequired) return <Navigate to="/login" replace />;
+  return <Navigate to="/settings/users" replace />;
+}
 
 export default function App() {
+  const { user, authRequired, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)", fontFamily: "var(--font-body)" }}>
+        Loading…
+      </div>
+    );
+  }
+
+  const loginElement = authRequired && !user ? <LoginPage /> : <Navigate to="/" replace />;
+
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="/login" element={loginElement} />
+      <Route
+        element={
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        }
+      >
         <Route index element={<Dashboard />} />
         <Route path="search" element={<SearchPanel />} />
         <Route path="store" element={<StoreForm />} />
@@ -19,6 +85,22 @@ export default function App() {
         <Route path="collections/:name" element={<CollectionBrowse />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="contexts/:id" element={<ContextDetail />} />
+        <Route
+          path="settings/users"
+          element={
+            <RequireAdminOrBootstrap>
+              <UsersPage />
+            </RequireAdminOrBootstrap>
+          }
+        />
+        <Route
+          path="settings/tokens"
+          element={
+            <RequireUserForTokens>
+              <TokensPage />
+            </RequireUserForTokens>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
