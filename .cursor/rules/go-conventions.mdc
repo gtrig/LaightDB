@@ -1,0 +1,56 @@
+---
+description: Go coding conventions and idioms for LaightDB
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Go Conventions
+
+## stdlib-first
+
+- HTTP routing: `net/http` with Go 1.22 method patterns (`mux.HandleFunc("GET /v1/health", h)`)
+- Logging: `log/slog` structured logger, pass `*slog.Logger` via constructor
+- Errors: `fmt.Errorf("context: %w", err)` wrapping, `errors.Is` / `errors.As` for checking
+- Testing: stdlib `testing`, table-driven tests, `t.Parallel()`, external test packages (`pkg_test`)
+- JSON: `encoding/json`, use struct tags
+
+## Patterns
+
+```go
+// Constructor injection -- no globals, no init()
+func NewEngine(cfg Config, log *slog.Logger) (*Engine, error) {
+    // validate cfg, return initialized struct
+}
+
+// Interface at the consumer, not the producer
+type Searcher interface {
+    Search(ctx context.Context, query string, opts SearchOpts) ([]Result, error)
+}
+
+// Table-driven tests
+func TestEngine_Get(t *testing.T) {
+    t.Parallel()
+    tests := []struct{
+        name string
+        key  string
+        want string
+        err  error
+    }{
+        {name: "found", key: "k1", want: "v1"},
+        {name: "missing", key: "none", err: ErrNotFound},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            t.Parallel()
+            // ...
+        })
+    }
+}
+```
+
+## Naming
+
+- No package-name stutter: `storage.Engine` not `storage.StorageEngine`
+- Acronyms: `ID`, `HTTP`, `URL` (all caps), not `Id`, `Http`
+- Unexported helpers: keep small, colocate with caller
+- File per concern: `wal.go`, `wal_test.go` -- not multi-thousand-line files

@@ -1,0 +1,79 @@
+---
+description: MCP server implementation using official Go SDK for internal/mcp/
+globs: "internal/mcp/**/*.go"
+alwaysApply: false
+---
+
+# MCP Server
+
+Uses `github.com/modelcontextprotocol/go-sdk/mcp` (official SDK, v1.5+).
+
+## Server Setup
+
+```go
+server := mcp.NewServer(
+    &mcp.Implementation{Name: "laightdb", Version: "v0.1.0"},
+    nil,
+)
+```
+
+## Adding Tools
+
+Tool handlers use typed input/output structs with json + jsonschema tags:
+
+```go
+type StoreInput struct {
+    Collection  string            `json:"collection" jsonschema:"collection name"`
+    Content     string            `json:"content" jsonschema:"the content to store"`
+    ContentType string            `json:"content_type" jsonschema:"code, conversation, doc, or kv"`
+    Metadata    map[string]string `json:"metadata,omitempty" jsonschema:"key-value metadata tags"`
+}
+
+mcp.AddTool(server, &mcp.Tool{
+    Name:        "store_context",
+    Description: "Store content in LaightDB with metadata",
+}, handleStoreContext)
+
+func handleStoreContext(ctx context.Context, req *mcp.CallToolRequest, input StoreInput) (
+    *mcp.CallToolResult, any, error,
+) {
+    // call context store, return result
+}
+```
+
+## Transports
+
+**stdio** (subprocess mode):
+```go
+server.Run(ctx, &mcp.StdioTransport{})
+```
+
+**Streamable HTTP** (network mode):
+```go
+handler := mcp.NewStreamableHTTPHandler(
+    func(r *http.Request) *mcp.Server { return server },
+    nil,
+)
+http.Handle("/mcp", handler)
+```
+
+Select via CLI flag: `--transport=stdio|http`
+
+## Tool List
+
+| Tool | Description | Key Params |
+|---|---|---|
+| `store_context` | Store content | collection, content, content_type, metadata |
+| `search_context` | Hybrid search | query, collection, filters, top_k, detail |
+| `get_context` | Get by ID | id, detail (metadata/summary/full) |
+| `delete_context` | Delete by ID | id |
+| `list_collections` | List collections | -- |
+| `get_stats` | Database statistics | -- |
+
+## Resources
+
+Expose collections as browsable MCP resources. Each collection URI: `laightdb://collections/{name}`.
+
+## Error Handling
+
+Return `*mcp.CallToolResult` with `IsError: true` and text content describing the error. Never panic in tool handlers.

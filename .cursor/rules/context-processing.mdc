@@ -1,0 +1,70 @@
+---
+description: Context processing patterns (chunking, dedup, tiered retrieval) for internal/context/
+globs: "internal/context/**/*.go"
+alwaysApply: false
+---
+
+# Context Processing
+
+## Chunker (chunker.go)
+
+Split content into semantic chunks for granular search and retrieval.
+
+- Target chunk size: ~512 tokens (configurable)
+- Split boundaries: paragraph breaks (`\n\n`), then sentence boundaries, then token limit
+- Each chunk gets: its own embedding vector, position index, parent entry ID
+- Overlap: 50 tokens between adjacent chunks for continuity
+
+```go
+type Chunk struct {
+    ID        string
+    EntryID   string
+    Content   string
+    Position  int
+    Embedding []float32
+}
+
+func ChunkContent(content string, maxTokens int) []Chunk
+```
+
+## Deduplicator (dedup.go)
+
+Prevent redundant storage.
+
+- Exact dedup: SHA-256 hash of content -> reject if hash exists in same collection
+- Near-dedup: compute embedding, check cosine similarity against existing entries. If > 0.95 threshold, flag as near-duplicate
+- On duplicate: return existing entry ID instead of creating new
+
+## Tiered Retrieval (tiered.go)
+
+Three detail levels to minimize context window usage:
+
+| Level | Returns | Use Case |
+|---|---|---|
+| `metadata` | ID, collection, content_type, metadata, token_count, created_at | Browsing, listing |
+| `summary` | metadata + summary text | Search results default |
+| `full` | summary + complete content + chunks | Targeted deep retrieval |
+
+Default search results use `summary` level. Client requests `full` for specific entries.
+
+```go
+type DetailLevel string
+const (
+    DetailMetadata DetailLevel = "metadata"
+    DetailSummary  DetailLevel = "summary"
+    DetailFull     DetailLevel = "full"
+)
+```
+
+## Store (store.go)
+
+Orchestrates the full ingest pipeline:
+
+1. Validate input
+2. Check dedup (hash + similarity)
+3. Chunk content
+4. Generate embeddings for each chunk + full content
+5. Estimate token count
+6. Queue async summarization (pluggable LLM)
+7. Write to storage engine
+8. Update all indexes (fulltext, vector, metadata)

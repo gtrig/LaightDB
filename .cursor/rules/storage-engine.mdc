@@ -1,0 +1,65 @@
+---
+description: LSM-tree storage engine implementation patterns for internal/storage/
+globs: "internal/storage/**/*.go"
+alwaysApply: false
+---
+
+# Storage Engine (LSM-Tree)
+
+## Write Path
+
+```
+Put(key, value)
+  -> Append to WAL (sequential, fsync for durability)
+  -> Insert into MemTable (sorted skip list)
+  -> If MemTable full: flush to new SSTable, rotate WAL
+```
+
+## Read Path
+
+```
+Get(key)
+  -> Check MemTable (newest data)
+  -> Check immutable MemTables (being flushed)
+  -> Check SSTables newest-first (use bloom filter to skip)
+  -> Binary search index block within matching SSTable
+```
+
+## WAL Format
+
+Binary, append-only: `[4-byte length][4-byte CRC32][1-byte type][key-len][val-len][key][value]`
+
+- Types: Put=1, Delete=2
+- `os.O_APPEND | os.O_WRONLY | os.O_CREATE` with `f.Sync()` after each write
+- On recovery: replay WAL entries into fresh MemTable
+
+## SSTable Format
+
+```
+[data block 0][data block 1]...[index block][bloom filter][footer]
+- Data block: sorted key-value pairs, prefix-compressed
+- Index block: [key, offset] pairs for binary search
+- Bloom filter: probabilistic negative lookups
+- Footer (fixed 16 bytes): index_offset(8) + bloom_offset(8)
+```
+
+Read strategy: seek to footer -> read index offset -> load index -> binary search.
+
+## Compaction
+
+- Size-tiered: when N SSTables exist at similar size, merge into one larger
+- K-way merge: use heap/priority queue
+- Tombstone processing: discard deleted keys during merge
+- Run in background goroutine, never block writes
+
+## Key Interfaces
+
+```go
+type Engine interface {
+    Put(ctx context.Context, key, value []byte) error
+    Get(ctx context.Context, key []byte) ([]byte, error)
+    Delete(ctx context.Context, key []byte) error
+    Scan(ctx context.Context, prefix []byte) Iterator
+    Close() error
+}
+```

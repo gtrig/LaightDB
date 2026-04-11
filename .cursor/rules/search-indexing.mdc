@@ -1,0 +1,63 @@
+---
+description: Search and indexing patterns (BM25, HNSW, hybrid) for internal/index/
+globs: "internal/index/**/*.go"
+alwaysApply: false
+---
+
+# Search & Indexing
+
+## BM25 Full-Text (fulltext.go)
+
+Okapi BM25 scoring: `score(q,d) = sum_t[ IDF(t) * (tf * (k1+1)) / (tf + k1*(1 - b + b*dl/avgdl)) ]`
+
+- k1=1.2, b=0.75 (defaults)
+- Inverted index: `map[term][]Posting` where Posting = {docID, termFreq}
+- Tokenizer: lowercase, split on whitespace/punctuation, optional stemming
+- IDF: `log((N - df + 0.5) / (df + 0.5) + 1)` where N=total docs, df=docs containing term
+- Precompute doc lengths and avgdl at index time
+
+## HNSW Vector Index (hnsw.go)
+
+Multi-layer navigable small world graph for ANN search.
+
+**Construction** -- for each new vector:
+1. Assign max layer: `l = floor(-ln(rand()) * (1/ln(M)))`
+2. From top layer, greedy search to find entry point for each layer
+3. At layers l..0, find `efConstruction` nearest neighbors, connect to top-M (2*M on layer 0)
+
+**Search**:
+1. Start at top layer entry point
+2. Greedy descend (ef=1) through upper layers
+3. At layer 0, beam search with ef candidates, return top-k
+
+**Parameters**: M=16, efConstruction=200, efSearch=64 (configurable)
+
+Distance functions: cosine similarity (normalize vectors, use dot product).
+
+```go
+type HNSWIndex struct {
+    layers    []map[uint64][]uint64  // adjacency lists per layer
+    vectors   map[uint64][]float32
+    entryID   uint64
+    maxLayer  int
+    M         int
+    efConstr  int
+}
+```
+
+## Hybrid Search (hybrid.go)
+
+Reciprocal Rank Fusion (RRF) to combine BM25 + vector scores:
+
+```
+RRF_score(d) = sum_r[ 1 / (k + rank_r(d)) ]  where k=60
+```
+
+1. Run BM25 query -> ranked list
+2. Run HNSW vector search -> ranked list
+3. Merge via RRF, apply metadata filters
+4. Return top_k results
+
+## Metadata Index (metadata.go)
+
+Inverted index on `key:value` pairs -> set of doc IDs. Used for pre-filtering or post-filtering hybrid results.
