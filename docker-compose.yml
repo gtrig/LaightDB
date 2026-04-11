@@ -30,6 +30,27 @@ services:
     profiles:
       - dev
 
+  laightdb-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - laightdb
+    restart: unless-stopped
+
+  laightdb-ui-dev:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - laightdb-dev
+    profiles:
+      - dev
+
 volumes:
   laightdb-data:
   laightdb-dev-data:

@@ -23,6 +23,7 @@ func NewHTTPServer(store *context.Store) *HTTPServer {
 	m.HandleFunc("POST /v1/search", s.handleSearch)
 	m.HandleFunc("GET /v1/collections", s.handleCollections)
 	m.HandleFunc("POST /v1/collections/{name}/compact", s.handleCompact)
+	m.HandleFunc("GET /v1/stats", s.handleStats)
 	m.HandleFunc("GET /v1/health", s.handleHealth)
 	return s
 }
@@ -126,6 +127,16 @@ func (s *HTTPServer) handleCollections(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"collections": cols})
+}
+
+func (s *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.Store.Stats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 func (s *HTTPServer) handleCompact(w http.ResponseWriter, r *http.Request) {

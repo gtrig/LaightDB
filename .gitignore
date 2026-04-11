@@ -1,0 +1,24 @@
+# Go
+/laightdb
+*.exe
+coverage.out
+
+# UI
+ui/node_modules/
+ui/dist/
+ui/package-lock.json
+
+# Data
+/data/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

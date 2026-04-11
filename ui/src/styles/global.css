@@ -1,0 +1,158 @@
+:root {
+  --surface: #0d1518;
+  --surface-dim: #0d1518;
+  --surface-bright: #323a3e;
+  --surface-container-lowest: #070f12;
+  --surface-container-low: #151d20;
+  --surface-container: #192124;
+  --surface-container-high: #232b2e;
+  --surface-container-highest: #2e3639;
+
+  --primary: #6bd8cb;
+  --primary-container: #29a195;
+  --on-primary: #003732;
+  --on-primary-container: #00302b;
+  --on-primary-fixed: #00201d;
+
+  --secondary: #a6cfc8;
+  --secondary-container: #274d48;
+  --on-secondary-container: #95bdb6;
+
+  --tertiary: #ffb59a;
+  --tertiary-container: #d27956;
+
+  --error: #ffb4ab;
+  --error-container: #93000a;
+
+  --on-surface: #dbe4e8;
+  --on-surface-variant: #bcc9c6;
+  --outline: #879391;
+  --outline-variant: #3d4947;
+
+  --radius: 8px;
+  --radius-full: 9999px;
+
+  --font-headline: "Manrope", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-label: "Space Grotesk", monospace;
+
+  --badge-code: #60a5fa;
+  --badge-conversation: #4ade80;
+  --badge-doc: #c084fc;
+  --badge-kv: #fb923c;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  transition: box-shadow 0.2s;
+}
+
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 2px rgba(107, 216, 203, 0.25);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--outline);
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23879391' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  padding: 10px 16px;
+}
+
+td {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--on-surface);
+}
+
+tr {
+  transition: background 0.15s;
+}
+
+tbody tr:hover {
+  background: var(--surface-container-high);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: 3px;
+}
+
+@media (max-width: 768px) {
+  aside {
+    width: 200px !important;
+    min-width: 200px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  aside {
+    display: none !important;
+  }
+}
