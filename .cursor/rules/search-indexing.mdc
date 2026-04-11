@@ -1,5 +1,5 @@
 ---
-description: Search and indexing patterns (BM25, HNSW, hybrid) for internal/index/
+description: Search and indexing patterns (BM25, coder/hnsw, hybrid) for internal/index/
 globs: "internal/index/**/*.go"
 alwaysApply: false
 ---
@@ -16,34 +16,52 @@ Okapi BM25 scoring: `score(q,d) = sum_t[ IDF(t) * (tf * (k1+1)) / (tf + k1*(1 - 
 - IDF: `log((N - df + 0.5) / (df + 0.5) + 1)` where N=total docs, df=docs containing term
 - Precompute doc lengths and avgdl at index time
 
-## HNSW Vector Index (hnsw.go)
+## HNSW Vector Index (vector.go)
 
-Multi-layer navigable small world graph for ANN search.
+Thin wrapper around `github.com/coder/hnsw` (v0.6+). Do NOT reimplement HNSW from scratch.
 
-**Construction** -- for each new vector:
-1. Assign max layer: `l = floor(-ln(rand()) * (1/ln(M)))`
-2. From top layer, greedy search to find entry point for each layer
-3. At layers l..0, find `efConstruction` nearest neighbors, connect to top-M (2*M on layer 0)
+**API facts** (verify against [pkg.go.dev](https://pkg.go.dev/github.com/coder/hnsw)):
 
-**Search**:
-1. Start at top layer entry point
-2. Greedy descend (ef=1) through upper layers
-3. At layer 0, beam search with ef candidates, return top-k
-
-**Parameters**: M=16, efConstruction=200, efSearch=64 (configurable)
-
-Distance functions: cosine similarity (normalize vectors, use dot product).
+- `Node[K]` fields are **`Key`** and **`Value`** (`[]float32`), not `ID`/`Vec`.
+- `Search(query []float32, k int) []Node[K]` returns neighbors; use `n.Key`, `n.Value`.
+- Persistence: `LoadSavedGraph[K](path)` returns `*SavedGraph[K]` embedding `*Graph[K]`. Call **`SavedGraph.Save()`** (writes via `Graph.Export`). For in-memory only, use `NewGraph[K]()`.
 
 ```go
-type HNSWIndex struct {
-    layers    []map[uint64][]uint64  // adjacency lists per layer
-    vectors   map[uint64][]float32
-    entryID   uint64
-    maxLayer  int
-    M         int
-    efConstr  int
+import "github.com/coder/hnsw"
+
+type VectorIndex struct {
+    saved *hnsw.SavedGraph[uint64]
+    mu    sync.RWMutex
+}
+
+func OpenVectorIndex(path string) (*VectorIndex, error) {
+    sg, err := hnsw.LoadSavedGraph[uint64](path) // empty graph if file missing
+    if err != nil {
+        return nil, err
+    }
+    return &VectorIndex{saved: sg}, nil
+}
+
+func (v *VectorIndex) Insert(id uint64, vec []float32) {
+    v.mu.Lock()
+    defer v.mu.Unlock()
+    v.saved.Add(hnsw.MakeNode(id, vec))
+}
+
+func (v *VectorIndex) Search(query []float32, k int) []hnsw.Node[uint64] {
+    v.mu.RLock()
+    defer v.mu.RUnlock()
+    return v.saved.Search(query, k)
+}
+
+func (v *VectorIndex) Persist() error {
+    v.mu.RLock()
+    defer v.mu.RUnlock()
+    return v.saved.Save()
 }
 ```
+
+Save on graceful shutdown and after bulk index updates.
 
 ## Hybrid Search (hybrid.go)
 

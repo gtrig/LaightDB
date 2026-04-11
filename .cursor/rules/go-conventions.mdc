@@ -1,18 +1,51 @@
 ---
-description: Go coding conventions and idioms for LaightDB
+description: Go coding conventions and idioms for LaightDB (Go 1.26+)
 globs: "**/*.go"
 alwaysApply: false
 ---
 
-# Go Conventions
+# Go Conventions (Go 1.26+)
 
 ## stdlib-first
 
-- HTTP routing: `net/http` with Go 1.22 method patterns (`mux.HandleFunc("GET /v1/health", h)`)
+- HTTP routing: `net/http` with Go 1.22+ method patterns (`mux.HandleFunc("GET /v1/health", h)`)
 - Logging: `log/slog` structured logger, pass `*slog.Logger` via constructor
 - Errors: `fmt.Errorf("context: %w", err)` wrapping, `errors.Is` / `errors.As` for checking
-- Testing: stdlib `testing`, table-driven tests, `t.Parallel()`, external test packages (`pkg_test`)
+- Testing: stdlib `testing`, table-driven tests, `t.Parallel()`, `t.Context()`, `testing/synctest`
 - JSON: `encoding/json`, use struct tags
+- Dev tools: `go tool golangci-lint run`, `go tool air` -- tracked via `tool` directive in go.mod
+
+## Go 1.24-1.26 Idioms
+
+```go
+// sync.WaitGroup.Go (Go 1.25+) -- spawn tracked goroutines
+var wg sync.WaitGroup
+wg.Go(func() {
+    e.flushMemTable(ctx)
+})
+wg.Wait()
+
+// new(expr) (Go 1.26) -- pointer-to-value initialization
+optionalField := new("default value")  // *string pointing to "default value"
+
+// t.Context() (Go 1.24+) -- auto-canceled on test cleanup
+func TestEngine_Put(t *testing.T) {
+    ctx := t.Context()
+    engine := setupTestEngine(t)
+    err := engine.Put(ctx, []byte("key"), []byte("val"))
+    // ctx is canceled when test ends
+}
+
+// testing/synctest (Go 1.25+) -- deterministic concurrent tests
+func TestCompaction(t *testing.T) {
+    synctest.Run(func() {
+        engine := setupTestEngine(t)
+        // trigger compaction...
+        synctest.Wait() // waits until all goroutines block
+        // assert compaction results
+    })
+}
+```
 
 ## Patterns
 
@@ -30,6 +63,7 @@ type Searcher interface {
 // Table-driven tests
 func TestEngine_Get(t *testing.T) {
     t.Parallel()
+    ctx := t.Context()
     tests := []struct{
         name string
         key  string
@@ -42,7 +76,7 @@ func TestEngine_Get(t *testing.T) {
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
             t.Parallel()
-            // ...
+            // use ctx ...
         })
     }
 }
