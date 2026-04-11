@@ -42,9 +42,18 @@ export default function ContextDetail() {
   const [activeTab, setActiveTab] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
-  const detail = tabs[activeTab].detail;
-  const fetchEntry = useCallback(() => getContext(id!, detail), [id, detail]);
-  const { data: entry, loading, error } = useApi(fetchEntry, [id, detail]);
+  const detailLevel: DetailLevel = activeTab === 3 ? "full" : tabs[activeTab].detail;
+  const fetchEntry = useCallback(() => getContext(id!, detailLevel), [id, detailLevel]);
+  const { data: entry, loading, error } = useApi(fetchEntry, [id, detailLevel]);
+
+  async function copyId() {
+    if (!id) return;
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function handleDelete() {
     if (!id) return;
@@ -75,6 +84,20 @@ export default function ContextDetail() {
         <CollectionBadge name={entry.collection} />
         <ContentTypeBadge type={entry.content_type} />
         <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={copyId}
+          style={{
+            background: "var(--surface-container-highest)",
+            color: "var(--on-surface-variant)",
+            borderRadius: "var(--radius)",
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          Copy ID
+        </button>
         <button
           onClick={handleDelete}
           disabled={deleting}

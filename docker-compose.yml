@@ -4,13 +4,23 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${LAIGHTDB_HTTP_PORT:-8080}:8080"
     volumes:
       - laightdb-data:/data
     environment:
       - LAIGHTDB_DATA_DIR=/data
       - LAIGHTDB_HTTP_ADDR=:8080
-      - LAIGHTDB_MCP_TRANSPORT=http
+      - LAIGHTDB_MCP_TRANSPORT=${LAIGHTDB_MCP_TRANSPORT:-http}
+      - LAIGHTDB_SUMMARIZER=${LAIGHTDB_SUMMARIZER:-noop}
+      - LAIGHTDB_OPENAI_API_KEY=${LAIGHTDB_OPENAI_API_KEY:-}
+      - LAIGHTDB_OPENAI_BASE_URL=${LAIGHTDB_OPENAI_BASE_URL:-}
+      - LAIGHTDB_OPENAI_MODEL=${LAIGHTDB_OPENAI_MODEL:-}
+      - LAIGHTDB_ANTHROPIC_API_KEY=${LAIGHTDB_ANTHROPIC_API_KEY:-}
+      - LAIGHTDB_OLLAMA_URL=${LAIGHTDB_OLLAMA_URL:-http://host.docker.internal:11434}
+      - LAIGHTDB_MEMTABLE_SIZE=${LAIGHTDB_MEMTABLE_SIZE:-4194304}
+      - LAIGHTDB_SEARCH_TOP_K=${LAIGHTDB_SEARCH_TOP_K:-10}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   laightdb-dev:
@@ -18,7 +28,7 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     ports:
-      - "8080:8080"
+      - "${LAIGHTDB_HTTP_PORT:-8080}:8080"
     volumes:
       - .:/src
       - go-cache:/go/pkg/mod
@@ -26,7 +36,17 @@ services:
     environment:
       - LAIGHTDB_DATA_DIR=/data
       - LAIGHTDB_HTTP_ADDR=:8080
-      - LAIGHTDB_MCP_TRANSPORT=http
+      - LAIGHTDB_MCP_TRANSPORT=${LAIGHTDB_MCP_TRANSPORT:-http}
+      - LAIGHTDB_SUMMARIZER=${LAIGHTDB_SUMMARIZER:-noop}
+      - LAIGHTDB_OPENAI_API_KEY=${LAIGHTDB_OPENAI_API_KEY:-}
+      - LAIGHTDB_OPENAI_BASE_URL=${LAIGHTDB_OPENAI_BASE_URL:-}
+      - LAIGHTDB_OPENAI_MODEL=${LAIGHTDB_OPENAI_MODEL:-}
+      - LAIGHTDB_ANTHROPIC_API_KEY=${LAIGHTDB_ANTHROPIC_API_KEY:-}
+      - LAIGHTDB_OLLAMA_URL=${LAIGHTDB_OLLAMA_URL:-http://host.docker.internal:11434}
+      - LAIGHTDB_MEMTABLE_SIZE=${LAIGHTDB_MEMTABLE_SIZE:-4194304}
+      - LAIGHTDB_SEARCH_TOP_K=${LAIGHTDB_SEARCH_TOP_K:-10}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     profiles:
       - dev
 
@@ -35,7 +55,7 @@ services:
       context: ./ui
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "${LAIGHTDB_UI_PORT:-3000}:3000"
     depends_on:
       - laightdb
     restart: unless-stopped
@@ -45,7 +65,7 @@ services:
       context: ./ui
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "${LAIGHTDB_UI_PORT:-3000}:3000"
     depends_on:
       - laightdb-dev
     profiles:

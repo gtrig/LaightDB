@@ -1,11 +1,11 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useState, useEffect, type CSSProperties, type FormEvent } from "react";
 import { searchContexts, getContext } from "../api";
 import { useApi } from "../hooks/useApi";
 import { listCollections } from "../api";
-import type { ContextEntry } from "../types";
+import type { ContextEntry, DetailLevel } from "../types";
 import ContentTypeBadge from "./ContentTypeBadge";
 import CollectionBadge from "./CollectionBadge";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 interface Hit {
   id: string;
@@ -47,8 +47,17 @@ export default function SearchPanel() {
   const [hits, setHits] = useState<Hit[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resultDetail, setResultDetail] = useState<DetailLevel>("summary");
+  const [searchParams] = useSearchParams();
   const { data: collections } = useApi(listCollections);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const c = searchParams.get("collection");
+    if (c) setCollection(c);
+    const q = searchParams.get("q");
+    if (q) setQuery(q);
+  }, [searchParams]);
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -68,7 +77,7 @@ export default function SearchPanel() {
       });
       const enriched = await Promise.all(
         results.map(async (r) => {
-          const entry = await getContext(r.ID, "summary").catch(() => undefined);
+          const entry = await getContext(r.ID, resultDetail).catch(() => undefined);
           return { id: r.ID, score: r.Score, entry };
         })
       );
@@ -132,6 +141,19 @@ export default function SearchPanel() {
               {collections?.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
+            </select>
+          </div>
+
+          <div>
+            <div style={labelStyle}>Preview detail</div>
+            <select
+              value={resultDetail}
+              onChange={(e) => setResultDetail(e.target.value as DetailLevel)}
+              style={{ minWidth: 140 }}
+            >
+              <option value="summary">Summary</option>
+              <option value="metadata">Metadata</option>
+              <option value="full">Full</option>
             </select>
           </div>
 
@@ -275,10 +297,24 @@ export default function SearchPanel() {
               {hit.entry && <CollectionBadge name={hit.entry.collection} />}
               {hit.entry && <ContentTypeBadge type={hit.entry.content_type} />}
             </div>
-            {hit.entry?.summary && (
+            {hit.entry?.summary && resultDetail !== "metadata" && (
               <p style={{ marginTop: 8, fontSize: 13, color: "var(--on-surface-variant)", lineHeight: 1.5 }}>
                 {hit.entry.summary.substring(0, 200)}
                 {hit.entry.summary.length > 200 ? "..." : ""}
+              </p>
+            )}
+            {hit.entry && resultDetail === "metadata" && (
+              <p style={{ marginTop: 8, fontSize: 12, color: "var(--on-surface-variant)", lineHeight: 1.5 }}>
+                {Object.entries(hit.entry.metadata ?? {})
+                  .slice(0, 4)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(" · ") || "No metadata"}
+              </p>
+            )}
+            {hit.entry?.content && resultDetail === "full" && (
+              <p style={{ marginTop: 8, fontSize: 12, fontFamily: "var(--font-label)", color: "var(--on-surface-variant)", lineHeight: 1.5 }}>
+                {(hit.entry.content ?? "").substring(0, 280)}
+                {(hit.entry.content?.length ?? 0) > 280 ? "…" : ""}
               </p>
             )}
           </div>

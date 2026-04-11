@@ -261,6 +261,57 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	return out, nil
 }
 
+// EntryListItem is a lightweight row for REST listing.
+type EntryListItem struct {
+	ID          string    `json:"id"`
+	Collection  string    `json:"collection"`
+	ContentType string    `json:"content_type"`
+	TokenCount  int       `json:"token_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ListEntries returns entries newest-first, optionally filtered by collection.
+func (s *Store) ListEntries(ctx context.Context, collection string, limit int) ([]EntryListItem, error) {
+	_ = ctx
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	keys := s.eng.PrefixKeys(docKeyPrefix)
+	var out []EntryListItem
+	for _, k := range keys {
+		raw, ok := s.eng.Get(k)
+		if !ok {
+			continue
+		}
+		ent, err := storage.Decode(raw)
+		if err != nil {
+			continue
+		}
+		if collection != "" && ent.Collection != collection {
+			continue
+		}
+		out = append(out, EntryListItem{
+			ID:          ent.ID,
+			Collection:  ent.Collection,
+			ContentType: ent.ContentType,
+			TokenCount:  ent.TokenCount,
+			CreatedAt:   ent.CreatedAt,
+			UpdatedAt:   ent.UpdatedAt,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 // ListCollections returns distinct collection names.
 func (s *Store) ListCollections(ctx context.Context) ([]string, error) {
 	_ = ctx

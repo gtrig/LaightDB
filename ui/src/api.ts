@@ -1,4 +1,4 @@
-import type { ContextEntry, SearchResult, StatsResponse, DetailLevel } from "./types";
+import type { ContextEntry, SearchResult, StatsResponse, DetailLevel, EntryListItem } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -7,7 +7,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(`${res.status}: ${text}`);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  if (text === "") return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export async function healthCheck(): Promise<{ status: string }> {
@@ -36,15 +38,24 @@ export async function storeContext(body: {
   });
 }
 
+export async function listEntries(options?: { collection?: string; limit?: number }): Promise<EntryListItem[]> {
+  const q = new URLSearchParams();
+  if (options?.collection) q.set("collection", options.collection);
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  const data = await request<{ entries: EntryListItem[] }>(`/v1/contexts${qs ? `?${qs}` : ""}`);
+  return data.entries ?? [];
+}
+
 export async function getContext(
   id: string,
   detail: DetailLevel = "summary"
 ): Promise<ContextEntry> {
-  return request(`/v1/contexts/${id}?detail=${detail}`);
+  return request(`/v1/contexts/${encodeURIComponent(id)}?detail=${detail}`);
 }
 
 export async function deleteContext(id: string): Promise<void> {
-  return request(`/v1/contexts/${id}`, { method: "DELETE" });
+  return request(`/v1/contexts/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function searchContexts(body: {
@@ -63,5 +74,5 @@ export async function searchContexts(body: {
 }
 
 export async function compactCollection(name: string): Promise<void> {
-  return request(`/v1/collections/${name}/compact`, { method: "POST" });
+  return request(`/v1/collections/${encodeURIComponent(name)}/compact`, { method: "POST" });
 }

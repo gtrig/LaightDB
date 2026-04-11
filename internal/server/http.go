@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/gtrig/laightdb/internal/context"
 )
@@ -18,6 +19,7 @@ func NewHTTPServer(store *context.Store) *HTTPServer {
 	m := http.NewServeMux()
 	s := &HTTPServer{Store: store, Mux: m}
 	m.HandleFunc("POST /v1/contexts", s.handlePostContexts)
+	m.HandleFunc("GET /v1/contexts", s.handleListContexts)
 	m.HandleFunc("GET /v1/contexts/{id}", s.handleGetContext)
 	m.HandleFunc("DELETE /v1/contexts/{id}", s.handleDeleteContext)
 	m.HandleFunc("POST /v1/search", s.handleSearch)
@@ -35,6 +37,18 @@ func (s *HTTPServer) Handler() http.Handler {
 func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *HTTPServer) handleListContexts(w http.ResponseWriter, r *http.Request) {
+	collection := r.URL.Query().Get("collection")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	items, err := s.Store.ListEntries(r.Context(), collection, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"entries": items})
 }
 
 func (s *HTTPServer) handlePostContexts(w http.ResponseWriter, r *http.Request) {

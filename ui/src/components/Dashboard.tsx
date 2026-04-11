@@ -1,6 +1,5 @@
 import { useApi } from "../hooks/useApi";
-import { getStats, listCollections, searchContexts } from "../api";
-import type { SearchResult } from "../types";
+import { getStats, listCollections, listEntries } from "../api";
 import ContentTypeBadge from "./ContentTypeBadge";
 import CollectionBadge from "./CollectionBadge";
 import { useNavigate } from "react-router-dom";
@@ -36,21 +35,20 @@ const cardValue: CSSProperties = {
 export default function Dashboard() {
   const { data: stats, loading: statsLoading } = useApi(getStats);
   const { data: collections } = useApi(listCollections);
-  const [recentHits, setRecentHits] = useState<SearchResult[]>([]);
   const [recentEntries, setRecentEntries] = useState<ContextEntry[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    searchContexts({ query: "*", top_k: 10 })
-      .then(setRecentHits)
-      .catch(() => setRecentHits([]));
+    setLoadingRecent(true);
+    listEntries({ limit: 15 })
+      .then((rows) =>
+        Promise.all(rows.map((r) => getContext(r.id, "metadata").catch(() => null)))
+      )
+      .then((entries) => setRecentEntries(entries.filter((e): e is ContextEntry => e !== null)))
+      .catch(() => setRecentEntries([]))
+      .finally(() => setLoadingRecent(false));
   }, []);
-
-  useEffect(() => {
-    if (recentHits.length === 0) return;
-    Promise.all(recentHits.map((h) => getContext(h.ID, "metadata").catch(() => null)))
-      .then((entries) => setRecentEntries(entries.filter((e): e is ContextEntry => e !== null)));
-  }, [recentHits]);
 
   function timeAgo(dateStr: string): string {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -114,7 +112,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {recentEntries.map((entry) => (
+            {!loadingRecent && recentEntries.map((entry) => (
               <tr
                 key={entry.id}
                 style={{ cursor: "pointer" }}
@@ -131,7 +129,14 @@ export default function Dashboard() {
                 <td style={{ fontSize: 12, color: "var(--on-surface-variant)" }}>{timeAgo(entry.created_at)}</td>
               </tr>
             ))}
-            {recentEntries.length === 0 && !statsLoading && (
+            {loadingRecent && !recentEntries.length && (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!loadingRecent && recentEntries.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
                   No entries yet

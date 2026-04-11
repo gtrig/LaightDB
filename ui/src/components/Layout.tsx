@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { listCollections, healthCheck } from "../api";
 import type { CSSProperties } from "react";
@@ -108,12 +108,32 @@ export default function Layout() {
             <NavIcon d="M12 4v16m8-8H4" />
             Store Context
           </NavLink>
+          <NavLink
+            to="/collections"
+            style={({ isActive }) => ({ ...baseLinkStyle, ...(isActive ? activeLinkExtra : {}) })}
+          >
+            <NavIcon d="M4 6h16M4 12h16M4 18h7" />
+            Collections
+          </NavLink>
+          <NavLink
+            to="/system"
+            style={({ isActive }) => ({ ...baseLinkStyle, ...(isActive ? activeLinkExtra : {}) })}
+          >
+            <NavIcon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            System
+          </NavLink>
         </nav>
 
         <div style={sectionTitleStyle}>Collections</div>
         <div style={{ flex: 1, overflow: "auto" }}>
           {collections?.map((c) => (
-            <div key={c} style={collectionItemStyle}>{c}</div>
+            <Link
+              key={c}
+              to={`/collections/${encodeURIComponent(c)}`}
+              style={{ ...collectionItemStyle, display: "block", color: "var(--on-surface-variant)", textDecoration: "none" }}
+            >
+              {c}
+            </Link>
           ))}
           {collections?.length === 0 && (
             <div style={{ ...collectionItemStyle, color: "var(--outline)", fontStyle: "italic" }}>

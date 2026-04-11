@@ -32,6 +32,16 @@ export interface StatsResponse {
   vector_nodes: number;
 }
 
+/** Row from GET /v1/contexts */
+export interface EntryListItem {
+  id: string;
+  collection: string;
+  content_type: string;
+  token_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type DetailLevel = "metadata" | "summary" | "full";
 
 export type ContentType = "code" | "conversation" | "doc" | "kv";

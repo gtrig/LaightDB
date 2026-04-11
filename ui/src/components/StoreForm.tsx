@@ -1,7 +1,7 @@
-import { useState, type FormEvent, type CSSProperties } from "react";
+import { useState, useEffect, type FormEvent, type CSSProperties } from "react";
 import { storeContext, listCollections } from "../api";
 import { useApi } from "../hooks/useApi";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { ContentType } from "../types";
 
 const fieldStyle: CSSProperties = { marginBottom: 20 };
@@ -28,6 +28,12 @@ export default function StoreForm() {
   const [error, setError] = useState<string | null>(null);
   const { data: collections } = useApi(listCollections);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const c = searchParams.get("collection");
+    if (c) setCollection(c);
+  }, [searchParams]);
 
   function addMeta() {
     setMetaPairs([...metaPairs, { key: "", value: "" }]);

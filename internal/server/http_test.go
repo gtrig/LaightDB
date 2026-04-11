@@ -60,3 +60,42 @@ func TestPostGetContext(t *testing.T) {
 		t.Fatal(rec.Code)
 	}
 }
+
+func TestListContexts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	st, err := context.OpenStore(t.Context(), dir, 1<<20, nil, summarize.Noop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	s := NewHTTPServer(st)
+
+	body := `{"collection":"alpha","content":"list test one","content_type":"doc"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/contexts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/contexts?limit=50", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list %d %s", rec.Code, rec.Body.String())
+	}
+	var listOut struct {
+		Entries []struct {
+			ID         string `json:"id"`
+			Collection string `json:"collection"`
+		} `json:"entries"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&listOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(listOut.Entries) != 1 || listOut.Entries[0].Collection != "alpha" {
+		t.Fatalf("entries: %+v", listOut.Entries)
+	}
+}

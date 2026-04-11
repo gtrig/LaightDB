@@ -51,8 +51,26 @@ Configuration is **environment variables and flags only** (no config file). Comm
 | `LAIGHTDB_DATA_DIR` | Database files (default `./data`) |
 | `LAIGHTDB_HTTP_ADDR` | REST listen address (e.g. `:8080`) |
 | `LAIGHTDB_MCP_TRANSPORT` | `stdio` (default) or `http` (streamable MCP over HTTP) |
+| `LAIGHTDB_SUMMARIZER` | `noop` (default), `openai`, `anthropic`, or `ollama` — used when storing context |
+| `LAIGHTDB_OPENAI_BASE_URL` | OpenAI-compatible API root including `/v1` (default: `https://api.openai.com/v1`) |
+| `LAIGHTDB_OPENAI_MODEL` | Chat model id (default: `gpt-4o-mini`) |
+| `LAIGHTDB_OPENAI_API_KEY` | Required for the real OpenAI API; optional for local OpenAI-compatible servers |
 
 See [AGENTS.md](AGENTS.md) for the full list as the binary is implemented.
+
+### LM Studio (local LLM for summaries)
+
+[LM Studio](https://lmstudio.ai/) exposes an **OpenAI-compatible** local server. Start a model and enable the local server (default is often port **1234**). Then run LaightDB with the OpenAI summarizer pointed at your machine:
+
+```bash
+export LAIGHTDB_SUMMARIZER=openai
+export LAIGHTDB_OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+export LAIGHTDB_OPENAI_MODEL=your-model-id   # exact id shown in LM Studio for the loaded model
+# API key not required for local LM Studio; omit or set a dummy if your client insists
+./laightdb
+```
+
+If the server uses another host or port, change `LAIGHTDB_OPENAI_BASE_URL` accordingly (path must end with `/v1`).
 
 ---
 
@@ -140,10 +158,12 @@ Same capabilities as MCP, for scripts and integrations:
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/v1/contexts` | Create context |
+| `GET` | `/v1/contexts` | List entries (`?collection=`, `?limit=`) |
 | `GET` | `/v1/contexts/{id}` | Get by ID (`?detail=`) |
 | `POST` | `/v1/search` | Hybrid search |
 | `DELETE` | `/v1/contexts/{id}` | Delete |
 | `GET` | `/v1/collections` | List collections |
+| `GET` | `/v1/stats` | Database stats (entries, collections, vector nodes) |
 | `POST` | `/v1/collections/{name}/compact` | Request compaction |
 | `GET` | `/v1/health` | Health check |
 
@@ -159,9 +179,14 @@ curl -s http://localhost:8080/v1/health
 
 When [Dockerfile](Dockerfile) and [docker-compose.yml](docker-compose.yml) exist:
 
+Copy [`.env.example`](.env.example) to `.env` and edit ports or LLM settings, then:
+
 ```bash
+cp .env.example .env
 docker compose up -d
 ```
+
+Compose reads `.env` for variable substitution (ports, summarizer, API keys). `.env` is gitignored. `extra_hosts` maps `host.docker.internal` to the host so containers can reach LM Studio or Ollama on your machine when you set the matching URLs.
 
 Persist data with a volume mounted at `LAIGHTDB_DATA_DIR` (e.g. `/data` in the container). For MCP over HTTP from a host client, publish the HTTP port and set `LAIGHTDB_MCP_TRANSPORT=http` as documented in compose.
 

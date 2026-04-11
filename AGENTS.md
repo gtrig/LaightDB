@@ -114,6 +114,7 @@ Serialized via custom binary codec (`internal/storage/codec.go`), not JSON.
 ## API Endpoints
 
 - `POST   /v1/contexts`              -- Store context (auto-chunks, embeds, summarizes)
+- `GET    /v1/contexts`               -- List entries (?collection=, ?limit=, newest first)
 - `GET    /v1/contexts/{id}`         -- Get by ID (?detail=summary|full)
 - `POST   /v1/search`               -- Hybrid search (query, filters, top_k, detail)
 - `DELETE /v1/contexts/{id}`         -- Delete
