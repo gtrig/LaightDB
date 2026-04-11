@@ -28,6 +28,7 @@ func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPSer
 	m.HandleFunc("DELETE /v1/contexts/{id}", s.handleDeleteContext)
 	m.HandleFunc("POST /v1/search", s.handleSearch)
 	m.HandleFunc("GET /v1/collections", s.handleCollections)
+	m.HandleFunc("DELETE /v1/collections/{name}", s.handleDeleteCollection)
 	m.HandleFunc("POST /v1/collections/{name}/compact", s.handleCompact)
 	m.HandleFunc("GET /v1/stats", s.handleStats)
 	m.HandleFunc("GET /v1/health", s.handleHealth)
@@ -192,6 +193,17 @@ func (s *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(stats)
+}
+
+func (s *HTTPServer) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	deleted, err := s.Store.DeleteCollection(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"deleted": deleted})
 }
 
 func (s *HTTPServer) handleCompact(w http.ResponseWriter, r *http.Request) {

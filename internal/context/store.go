@@ -189,6 +189,30 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteCollection removes all entries belonging to a collection and returns the count deleted.
+func (s *Store) DeleteCollection(ctx context.Context, collection string) (int, error) {
+	keys := s.eng.PrefixKeys(docKeyPrefix)
+	var deleted int
+	for _, k := range keys {
+		raw, ok := s.eng.Get(k)
+		if !ok {
+			continue
+		}
+		ent, err := storage.Decode(raw)
+		if err != nil {
+			continue
+		}
+		if ent.Collection != collection {
+			continue
+		}
+		if err := s.Delete(ctx, ent.ID); err != nil {
+			return deleted, fmt.Errorf("delete collection entry %s: %w", ent.ID, err)
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
 // SearchRequest is a hybrid query.
 type SearchRequest struct {
 	Query      string
@@ -358,9 +382,15 @@ func (s *Store) ListCollections(ctx context.Context) ([]string, error) {
 func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 	_ = ctx
 	keys := s.eng.PrefixKeys(docKeyPrefix)
+	var count int
+	for _, k := range keys {
+		if _, ok := s.eng.Get(k); ok {
+			count++
+		}
+	}
 	cols, _ := s.ListCollections(ctx)
 	return map[string]any{
-		"entries":      len(keys),
+		"entries":      count,
 		"collections":  len(cols),
 		"vector_nodes": s.vec.Len(),
 	}, nil

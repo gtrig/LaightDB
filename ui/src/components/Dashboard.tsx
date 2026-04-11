@@ -1,5 +1,6 @@
 import { useApi } from "../hooks/useApi";
-import { getStats, listCollections, listEntries } from "../api";
+import { useAuth } from "../hooks/useAuth";
+import { getStats, listCollections, listEntries, deleteContext } from "../api";
 import ContentTypeBadge from "./ContentTypeBadge";
 import CollectionBadge from "./CollectionBadge";
 import { useNavigate } from "react-router-dom";
@@ -37,7 +38,10 @@ export default function Dashboard() {
   const { data: collections } = useApi(listCollections);
   const [recentEntries, setRecentEntries] = useState<ContextEntry[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user, authRequired } = useAuth();
+  const isAdmin = !authRequired || user?.role === "admin";
 
   useEffect(() => {
     setLoadingRecent(true);
@@ -49,6 +53,20 @@ export default function Dashboard() {
       .catch(() => setRecentEntries([]))
       .finally(() => setLoadingRecent(false));
   }, []);
+
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm("Delete this entry? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await deleteContext(id);
+      setRecentEntries((prev) => prev.filter((entry) => entry.id !== id));
+    } catch {
+      /* error silently */
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   function timeAgo(dateStr: string): string {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -109,6 +127,7 @@ export default function Dashboard() {
               <th>Type</th>
               <th>Tokens</th>
               <th>Created</th>
+              {isAdmin && <th style={{ width: 60 }}></th>}
             </tr>
           </thead>
           <tbody>
@@ -127,18 +146,42 @@ export default function Dashboard() {
                 <td><ContentTypeBadge type={entry.content_type} /></td>
                 <td style={{ fontFamily: "var(--font-label)", fontSize: 12 }}>{entry.token_count}</td>
                 <td style={{ fontSize: 12, color: "var(--on-surface-variant)" }}>{timeAgo(entry.created_at)}</td>
+                {isAdmin && (
+                  <td>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDelete(entry.id, e)}
+                      disabled={deletingId === entry.id}
+                      style={{
+                        background: "transparent",
+                        color: "var(--error)",
+                        padding: "4px 8px",
+                        fontSize: 12,
+                        borderRadius: "var(--radius)",
+                        opacity: deletingId === entry.id ? 0.5 : 0.7,
+                        transition: "opacity 0.15s",
+                        cursor: deletingId === entry.id ? "default" : "pointer",
+                      }}
+                      title="Delete entry"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
+                      </svg>
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {loadingRecent && !recentEntries.length && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
+                <td colSpan={isAdmin ? 6 : 5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
                   Loading…
                 </td>
               </tr>
             )}
             {!loadingRecent && recentEntries.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
+                <td colSpan={isAdmin ? 6 : 5} style={{ textAlign: "center", color: "var(--outline)", padding: 32 }}>
                   No entries yet
                 </td>
               </tr>

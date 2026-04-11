@@ -87,6 +87,10 @@ export async function searchContexts(body: {
   return data.hits ?? [];
 }
 
+export async function deleteCollection(name: string): Promise<{ deleted: number }> {
+  return request(`/v1/collections/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
 export async function compactCollection(name: string): Promise<void> {
   return request(`/v1/collections/${encodeURIComponent(name)}/compact`, { method: "POST" });
 }
