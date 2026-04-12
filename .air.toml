@@ -4,3 +4,6 @@ bin = "/tmp/laightdb"
 include_ext = ["go"]
 exclude_dir = ["data", ".git", ".cursor"]
 delay = 1000
+# Bind mounts on Linux do not reliably deliver fsnotify events into the container; polling fixes hot reload in Docker.
+poll = true
+poll_interval = 500

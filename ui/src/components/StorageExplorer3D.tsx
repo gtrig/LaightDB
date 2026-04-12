@@ -376,23 +376,6 @@ function EngineScene({ diag }: { diag: StorageDiagnostics }) {
   );
 }
 
-// ─── Loading / error helpers ──────────────────────────────────────────────────
-
-function StatusBox({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      height: "100%",
-      color: "var(--on-surface-variant)",
-      fontSize: 14,
-    }}>
-      {children}
-    </div>
-  );
-}
-
 // ─── Main component ────────────────────────────────────────────────────────────
 
 type Tab = "graph" | "engine";
@@ -413,6 +396,27 @@ function CameraRig({ tab }: { tab: Tab }) {
   return null;
 }
 
+/** Solid background + context-loss reporting (embedded browsers / GPU limits often lose WebGL). */
+function SceneSetup({ onContextLost }: { onContextLost: () => void }) {
+  const { gl, scene } = useThree();
+  useEffect(() => {
+    scene.background = new THREE.Color(0x0f172a);
+    gl.setClearColor(0x0f172a, 1);
+  }, [gl, scene]);
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const onLost = (e: Event) => {
+      e.preventDefault();
+      onContextLost();
+    };
+    el.addEventListener("webglcontextlost", onLost);
+    return () => el.removeEventListener("webglcontextlost", onLost);
+  }, [gl, onContextLost]);
+
+  return null;
+}
+
 export default function StorageExplorer3D() {
   const [tab, setTab] = useState<Tab>("graph");
   const [overview, setOverview] = useState<GraphOverview | null>(null);
@@ -421,6 +425,9 @@ export default function StorageExplorer3D() {
   const [diagError, setDiagError] = useState<string | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(true);
   const [loadingDiag, setLoadingDiag] = useState(true);
+  const [webglLost, setWebglLost] = useState(false);
+  /** Bumps to remount `<Canvas>` after WebGL context loss or flaky GPU stacks. */
+  const [canvasMountKey, setCanvasMountKey] = useState(0);
   const positionsRef = useRef<Map<string, [number, number, number]>>(new Map());
   const [positions, setPositions] = useState<Map<string, [number, number, number]>>(new Map());
 
@@ -428,7 +435,12 @@ export default function StorageExplorer3D() {
     setLoadingGraph(true);
     setGraphError(null);
     try {
-      const data = await getGraphOverview({ limit: 500 });
+      const raw = await getGraphOverview({ limit: 500 });
+      const data: GraphOverview = {
+        nodes: raw?.nodes ?? [],
+        edges: raw?.edges ?? [],
+        truncated: Boolean(raw?.truncated),
+      };
       const pos = buildForceLayout(data.nodes, data.edges);
       positionsRef.current = pos;
       setPositions(pos);
@@ -458,10 +470,12 @@ export default function StorageExplorer3D() {
   const canvasStyle: React.CSSProperties = {
     position: "relative",
     width: "100%",
-    height: "calc(100vh - 220px)",
+    flexShrink: 0,
     minHeight: 420,
+    height: "max(420px, min(70dvh, calc(100vh - 200px)))",
     borderRadius: 12,
     overflow: "hidden",
+    isolation: "isolate",
     background: "linear-gradient(160deg, #0a0a14 0%, #0f172a 60%, #1a1040 100%)",
     border: "1px solid var(--outline-variant)",
   };
@@ -481,6 +495,23 @@ export default function StorageExplorer3D() {
 
   const showCanvas = showGraphCanvas || showEngineCanvas;
 
+  const explorerStatusText: string | null =
+    tab === "graph"
+      ? loadingGraph
+        ? "Computing force layout…"
+        : graphError
+          ? `Error: ${graphError}`
+          : overview && overview.nodes.length === 0
+            ? "No graph data yet. Store some context entries and link them."
+            : null
+      : loadingDiag
+        ? "Loading diagnostics…"
+        : diagError
+          ? `Error: ${diagError}`
+          : null;
+
+  const showExplorerStatusOverlay = !showCanvas && !webglLost && explorerStatusText !== null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -493,7 +524,12 @@ export default function StorageExplorer3D() {
           </p>
         </div>
         <button
-          onClick={tab === "graph" ? loadGraph : loadDiag}
+          onClick={() => {
+            setWebglLost(false);
+            setCanvasMountKey((k) => k + 1);
+            if (tab === "graph") void loadGraph();
+            else void loadDiag();
+          }}
           style={{
             background: "var(--surface-container-high)",
             border: "1px solid var(--outline-variant)",
@@ -531,25 +567,102 @@ export default function StorageExplorer3D() {
         ))}
       </div>
 
-      {/* Single viewport: one WebGL Canvas shared across tabs to avoid context loss when switching. */}
+      {/* Single viewport: one WebGL Canvas shared across tabs. Canvas is painted first; overlays use z-index so status text is never covered. */}
       <div style={canvasStyle}>
-        {tab === "graph" && loadingGraph && <StatusBox>Computing force layout…</StatusBox>}
-        {tab === "graph" && graphError && <StatusBox>Error: {graphError}</StatusBox>}
-        {tab === "graph" && !loadingGraph && !graphError && overview && overview.nodes.length === 0 && (
-          <StatusBox>No graph data yet. Store some context entries and link them.</StatusBox>
+        {showCanvas && !webglLost && (
+          <Canvas
+            key={canvasMountKey}
+            camera={{ position: [0, 0, 160], fov: 50 }}
+            gl={{ alpha: false, antialias: true, powerPreference: "high-performance" }}
+            dpr={[1, 2]}
+            style={{ position: "absolute", inset: 0, zIndex: 1, width: "100%", height: "100%" }}
+            onCreated={({ scene }) => {
+              scene.background = new THREE.Color(0x0f172a);
+            }}
+          >
+            <SceneSetup onContextLost={() => setWebglLost(true)} />
+            <CameraRig tab={tab} />
+            <Suspense fallback={null}>
+              {showGraphCanvas && overview && (
+                <GraphScene overview={overview} positions={positions} />
+              )}
+              {showEngineCanvas && diag && <EngineScene diag={diag} />}
+              <OrbitControls enableDamping dampingFactor={0.08} />
+            </Suspense>
+          </Canvas>
         )}
 
-        {tab === "engine" && loadingDiag && <StatusBox>Loading diagnostics…</StatusBox>}
-        {tab === "engine" && diagError && <StatusBox>Error: {diagError}</StatusBox>}
+        {webglLost && (
+          <div
+            role="alert"
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 8,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              padding: 24,
+              background: "rgba(10, 10, 20, 0.92)",
+              color: "var(--on-surface-variant)",
+              fontSize: 14,
+              textAlign: "center",
+            }}
+          >
+            <div>WebGL context was lost (often happens in embedded browsers or after GPU sleep). Try again or reload the page.</div>
+            <button
+              type="button"
+              onClick={() => {
+                setWebglLost(false);
+                setCanvasMountKey((k) => k + 1);
+                void loadGraph();
+                void loadDiag();
+              }}
+              style={{
+                background: "var(--primary)",
+                color: "var(--on-primary)",
+                border: "none",
+                borderRadius: "var(--radius)",
+                padding: "8px 18px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Retry 3D view
+            </button>
+          </div>
+        )}
 
-        {tab === "graph" && !loadingGraph && !graphError && overview && overview.truncated && overview.nodes.length > 0 && (
+        {showExplorerStatusOverlay && (
+          <div
+            role="status"
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
+              color: "var(--on-surface-variant)",
+              fontSize: 14,
+              textAlign: "center",
+            }}
+          >
+            {explorerStatusText}
+          </div>
+        )}
+
+        {tab === "graph" && !loadingGraph && !graphError && overview && overview.truncated && overview.nodes.length > 0 && showCanvas && !webglLost && (
           <div
             style={{
               position: "absolute",
               bottom: 12,
               left: "50%",
               transform: "translateX(-50%)",
-              zIndex: 2,
+              zIndex: 6,
               background: "rgba(245,158,11,0.15)",
               border: "1px solid rgba(245,158,11,0.4)",
               borderRadius: 8,
@@ -561,22 +674,6 @@ export default function StorageExplorer3D() {
           >
             Graph truncated at 500 nodes
           </div>
-        )}
-
-        {showCanvas && (
-          <Canvas
-            camera={{ position: [0, 0, 160], fov: 50 }}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-          >
-            <CameraRig tab={tab} />
-            <Suspense fallback={null}>
-              {showGraphCanvas && overview && (
-                <GraphScene overview={overview} positions={positions} />
-              )}
-              {showEngineCanvas && diag && <EngineScene diag={diag} />}
-              <OrbitControls enableDamping dampingFactor={0.08} />
-            </Suspense>
-          </Canvas>
         )}
       </div>
 

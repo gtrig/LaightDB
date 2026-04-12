@@ -77,9 +77,14 @@ services:
   laightdb-ui-dev:
     build:
       context: ./ui
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "${LAIGHTDB_UI_PORT:-3000}:3000"
+    volumes:
+      - ./ui:/app
+      - ui-node-modules:/app/node_modules
+    environment:
+      - VITE_API_PROXY=http://laightdb:8080
     depends_on:
       - laightdb-dev
     profiles:
@@ -107,3 +112,4 @@ volumes:
   laightdb-data:
   laightdb-dev-data:
   go-cache:
+  ui-node-modules:
