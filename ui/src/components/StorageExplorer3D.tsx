@@ -1,6 +1,6 @@
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Line } from "@react-three/drei";
+import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useNavigate } from "react-router-dom";
 import { getGraphOverview, getStorageDiagnostics } from "../api";
@@ -18,6 +18,37 @@ function collectionColor(col: string): string {
   let h = 0;
   for (let i = 0; i < col.length; i++) h = (h * 31 + col.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
+}
+
+/** Edge segment using classic `THREE.Line` (drei `<Line />` uses fat Line2 + screen resolution; keep edges simple). */
+function GraphEdgeLine({
+  from,
+  to,
+}: {
+  from: [number, number, number];
+  to: [number, number, number];
+}) {
+  const line = useMemo(() => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(...from),
+      new THREE.Vector3(...to),
+    ]);
+    const material = new THREE.LineBasicMaterial({
+      color: "#4f46e5",
+      transparent: true,
+      opacity: 0.45,
+    });
+    return new THREE.Line(geometry, material);
+  }, [from, to]);
+
+  useEffect(() => {
+    return () => {
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    };
+  }, [line]);
+
+  return <primitive object={line} />;
 }
 
 // ─── Force-directed layout ────────────────────────────────────────────────────
@@ -83,7 +114,7 @@ function buildForceLayout(
         const dx = nj.x - ni.x || 1e-6;
         const dy = nj.y - ni.y || 1e-6;
         const dz = nj.z - ni.z || 1e-6;
-        const d2 = dx * dx + dy * dy + dz * dz;
+        const d2 = Math.max(dx * dx + dy * dy + dz * dz, 1e-2);
         const f = (k * k) / d2;
         ni.vx -= dx * f * a;
         ni.vy -= dy * f * a;
@@ -125,8 +156,22 @@ function buildForceLayout(
     }
   }
 
+  // Fit into a modest radius so nodes stay inside the default perspective frustum (camera ~z=220, fov 50).
+  let maxR = 0;
+  for (const n of fNodes) {
+    const r = Math.hypot(n.x, n.y, n.z);
+    if (r > maxR) maxR = r;
+  }
+  const targetRadius = 55;
+  const scale = maxR > 1e-6 ? targetRadius / maxR : 1;
+
   const positions = new Map<string, [number, number, number]>();
-  for (const n of fNodes) positions.set(n.id, [n.x, n.y, n.z]);
+  for (const n of fNodes) {
+    const x = Number.isFinite(n.x) ? n.x * scale : 0;
+    const y = Number.isFinite(n.y) ? n.y * scale : 0;
+    const z = Number.isFinite(n.z) ? n.z * scale : 0;
+    positions.set(n.id, [x, y, z]);
+  }
   return positions;
 }
 
@@ -143,24 +188,47 @@ function GraphNode({
   onHover: (id: string | null) => void;
   onClick: (id: string) => void;
 }) {
-  const meshRef = useRef<THREE.Mesh>(null!);
+  const groupRef = useRef<THREE.Group>(null!);
   const color = collectionColor(node.collection);
+  const coreColor = useMemo(() => new THREE.Color(color), [color]);
   useFrame(({ clock }) => {
-    if (meshRef.current) {
-      meshRef.current.position.y = pos[1] + Math.sin(clock.elapsedTime * 0.8 + pos[0]) * 0.3;
+    if (groupRef.current) {
+      groupRef.current.position.y = pos[1] + Math.sin(clock.elapsedTime * 0.8 + pos[0]) * 0.3;
     }
   });
   return (
-    <mesh
-      ref={meshRef}
+    <group
+      ref={groupRef}
       position={pos}
       onPointerOver={(e) => { e.stopPropagation(); onHover(node.id); }}
       onPointerOut={() => onHover(null)}
       onClick={(e) => { e.stopPropagation(); onClick(node.id); }}
     >
-      <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial color={color} roughness={0.3} metalness={0.4} />
-    </mesh>
+      {/* Light outer shell — reads as a crisp rim against the dark scene */}
+      <mesh renderOrder={0}>
+        <sphereGeometry args={[1.42, 32, 32]} />
+        <meshStandardMaterial
+          color="#f1f5f9"
+          metalness={0.35}
+          roughness={0.38}
+          emissive="#e2e8f0"
+          emissiveIntensity={0.22}
+        />
+      </mesh>
+      {/* Saturated core with clearcoat for a subtle “glass / 3D” highlight */}
+      <mesh renderOrder={1}>
+        <sphereGeometry args={[1.12, 32, 32]} />
+        <meshPhysicalMaterial
+          color={color}
+          metalness={0.55}
+          roughness={0.22}
+          clearcoat={0.55}
+          clearcoatRoughness={0.28}
+          emissive={coreColor}
+          emissiveIntensity={0.18}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -192,14 +260,7 @@ function GraphScene({
         const tgt = positions.get(e.to_id);
         if (!src || !tgt) return null;
         return (
-          <Line
-            key={e.edge_id}
-            points={[src, tgt]}
-            color="#4f46e5"
-            lineWidth={1}
-            transparent
-            opacity={0.35}
-          />
+          <GraphEdgeLine key={e.edge_id} from={src} to={tgt} />
         );
       })}
 
@@ -376,6 +437,89 @@ function EngineScene({ diag }: { diag: StorageDiagnostics }) {
   );
 }
 
+// ─── WebGL fallbacks (embedded browsers / context loss) ───────────────────────
+
+function GraphOverviewFallback({ overview }: { overview: GraphOverview }) {
+  const navigate = useNavigate();
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxHeight: 280,
+        overflow: "auto",
+        textAlign: "left",
+        borderTop: "1px solid rgba(148,163,184,0.25)",
+        marginTop: 12,
+        paddingTop: 12,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--on-surface)" }}>
+        Graph data (list view)
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.45 }}>
+        {overview.nodes.map((n) => (
+          <li key={n.id} style={{ marginBottom: 6 }}>
+            <button
+              type="button"
+              onClick={() => navigate(`/contexts/${encodeURIComponent(n.id)}`)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: "var(--primary)",
+                textDecoration: "underline",
+                font: "inherit",
+              }}
+            >
+              {n.label || n.id}
+            </button>
+            <span style={{ color: "var(--on-surface-variant)", marginLeft: 6 }}>
+              ({n.collection || "—"})
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EngineOverviewFallback({ diag }: { diag: StorageDiagnostics }) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxHeight: 280,
+        overflow: "auto",
+        textAlign: "left",
+        borderTop: "1px solid rgba(148,163,184,0.25)",
+        marginTop: 12,
+        paddingTop: 12,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--on-surface)" }}>
+        Engine layout (text view)
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--on-surface-variant)" }}>
+        <div>WAL: {(diag.wal_bytes / 1024).toFixed(1)} KB</div>
+        <div>MemTable: {diag.mem_entries} entries</div>
+        <div style={{ marginTop: 8 }}>SSTables:</div>
+        <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+          {diag.sstables.length === 0 ? (
+            <li>None yet</li>
+          ) : (
+            diag.sstables.map((s) => (
+              <li key={s.path}>
+                #{s.seq} — {(s.bytes / 1024).toFixed(1)} KB — {s.path}
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ────────────────────────────────────────────────────────────
 
 type Tab = "graph" | "engine";
@@ -384,14 +528,17 @@ type Tab = "graph" | "engine";
 function CameraRig({ tab }: { tab: Tab }) {
   const { camera } = useThree();
   useEffect(() => {
+    const p = camera as THREE.PerspectiveCamera;
+    p.near = 0.1;
+    p.far = 100000;
     if (tab === "graph") {
-      camera.position.set(0, 0, 160);
-      if ("fov" in camera) (camera as THREE.PerspectiveCamera).fov = 50;
+      camera.position.set(0, 0, 220);
+      p.fov = 50;
     } else {
       camera.position.set(60, 60, 120);
-      if ("fov" in camera) (camera as THREE.PerspectiveCamera).fov = 45;
+      p.fov = 45;
     }
-    camera.updateProjectionMatrix();
+    p.updateProjectionMatrix();
   }, [tab, camera]);
   return null;
 }
@@ -572,9 +719,14 @@ export default function StorageExplorer3D() {
         {showCanvas && !webglLost && (
           <Canvas
             key={canvasMountKey}
-            camera={{ position: [0, 0, 160], fov: 50 }}
-            gl={{ alpha: false, antialias: true, powerPreference: "high-performance" }}
-            dpr={[1, 2]}
+            camera={{ position: [0, 0, 220], fov: 50, near: 0.1, far: 100000 }}
+            gl={{
+              alpha: false,
+              antialias: true,
+              powerPreference: "default",
+              failIfMajorPerformanceCaveat: false,
+            }}
+            dpr={[1, 1.5]}
             style={{ position: "absolute", inset: 0, zIndex: 1, width: "100%", height: "100%" }}
             onCreated={({ scene }) => {
               scene.background = new THREE.Color(0x0f172a);
@@ -587,7 +739,12 @@ export default function StorageExplorer3D() {
                 <GraphScene overview={overview} positions={positions} />
               )}
               {showEngineCanvas && diag && <EngineScene diag={diag} />}
-              <OrbitControls enableDamping dampingFactor={0.08} />
+              <OrbitControls
+                makeDefault
+                enableDamping
+                dampingFactor={0.08}
+                target={[0, 0, 0]}
+              />
             </Suspense>
           </Canvas>
         )}
@@ -601,17 +758,21 @@ export default function StorageExplorer3D() {
               zIndex: 8,
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 16,
-              padding: 24,
-              background: "rgba(10, 10, 20, 0.92)",
+              alignItems: "stretch",
+              justifyContent: "flex-start",
+              gap: 0,
+              padding: 20,
+              overflow: "auto",
+              background: "rgba(10, 10, 20, 0.96)",
               color: "var(--on-surface-variant)",
               fontSize: 14,
               textAlign: "center",
             }}
           >
-            <div>WebGL context was lost (often happens in embedded browsers or after GPU sleep). Try again or reload the page.</div>
+            <div style={{ marginBottom: 12 }}>
+              WebGL is unavailable or the context was lost (common in embedded browsers, remote preview, or after GPU sleep).
+              You can still use the data below.
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -621,6 +782,7 @@ export default function StorageExplorer3D() {
                 void loadDiag();
               }}
               style={{
+                alignSelf: "center",
                 background: "var(--primary)",
                 color: "var(--on-primary)",
                 border: "none",
@@ -632,6 +794,10 @@ export default function StorageExplorer3D() {
             >
               Retry 3D view
             </button>
+            {tab === "graph" && overview && overview.nodes.length > 0 && (
+              <GraphOverviewFallback overview={overview} />
+            )}
+            {tab === "engine" && diag && <EngineOverviewFallback diag={diag} />}
           </div>
         )}
 

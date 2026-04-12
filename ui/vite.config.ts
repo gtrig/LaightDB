@@ -7,6 +7,9 @@ const apiProxyTarget =
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    dedupe: ["three"],
+  },
   server: {
     port: 3000,
     proxy: {
