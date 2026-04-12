@@ -18,4 +18,9 @@ test.describe("auth required", () => {
     await expect(page.getByText("LaightDB").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
   });
+
+  test("redirects unauthenticated users from explorer to login", async ({ page }) => {
+    await page.goto("/explorer");
+    await expect(page).toHaveURL(/\/login$/);
+  });
 });

@@ -44,11 +44,166 @@ function fulfillEmpty(route: Route, status: number) {
   return route.fulfill({ status });
 }
 
+const stressPhase = {
+  requested: 10,
+  ok: 10,
+  errors: 0,
+  wall: 1e7,
+  p50: 1e5,
+  p95: 2e5,
+  p99: 3e5,
+  ops_per_sec: 1000,
+};
+
+/**
+ * Routes that do not depend on auth scenario (same payloads for open, admin, login mock, etc.).
+ * Returns true if fulfilled.
+ */
+async function tryFulfillSharedV1Route(route: Route): Promise<boolean> {
+  const req = route.request();
+  const url = new URL(req.url());
+  const path = url.pathname;
+  const method = req.method();
+
+  if (path === "/v1/graph/overview" && method === "GET") {
+    await fulfillJson(route, { nodes: [], edges: [], truncated: false });
+    return true;
+  }
+
+  if (path === "/v1/storage/diagnostics" && method === "GET") {
+    await fulfillJson(route, {
+      data_dir: "/tmp/mock-data",
+      wal_bytes: 4096,
+      mem_entries: 3,
+      sstables: [{ path: "00001.sst", bytes: 8192, seq: 1 }],
+    });
+    return true;
+  }
+
+  if (path === "/v1/stress/queries" && method === "GET") {
+    await fulfillJson(route, { queries: ["alpha", "beta"] });
+    return true;
+  }
+
+  if (path === "/v1/stress" && method === "POST") {
+    await fulfillJson(route, {
+      base_url: "http://127.0.0.1:8080",
+      collection: "demo",
+      writes: stressPhase,
+      searches: { ...stressPhase, requested: 5, ok: 5, ops_per_sec: 500 },
+      total_wall: 1.5e7,
+    });
+    return true;
+  }
+
+  if (path.match(/^\/v1\/collections\/[^/]+$/) && method === "DELETE") {
+    await fulfillJson(route, { deleted: 0 });
+    return true;
+  }
+
+  if (path.match(/^\/v1\/contexts\/[^/]+$/) && method === "DELETE") {
+    await fulfillEmpty(route, 204);
+    return true;
+  }
+
+  if (path === "/v1/health" && method === "GET") {
+    await fulfillJson(route, { status: "ok" });
+    return true;
+  }
+
+  if (path === "/v1/stats" && method === "GET") {
+    await fulfillJson(route, { entries: 0, collections: 1, vector_nodes: 0, edges: 0 });
+    return true;
+  }
+
+  if (path === "/v1/collections" && method === "GET") {
+    await fulfillJson(route, { collections: ["demo"] });
+    return true;
+  }
+
+  if (path === "/v1/contexts" && method === "GET") {
+    await fulfillJson(route, { entries: [] });
+    return true;
+  }
+
+  if (path === "/v1/search" && method === "POST") {
+    await fulfillJson(route, { hits: [] });
+    return true;
+  }
+
+  if (path === "/v1/users" && method === "GET") {
+    await fulfillJson(route, { users: [] });
+    return true;
+  }
+
+  if (path === "/v1/tokens" && method === "GET") {
+    await fulfillJson(route, { tokens: [] });
+    return true;
+  }
+
+  const ctxMatch = /^\/v1\/contexts\/([^/]+)$/.exec(path);
+  if (ctxMatch && method === "GET") {
+    await fulfillJson(route, { ...sampleEntry, id: ctxMatch[1] });
+    return true;
+  }
+
+  if (path.startsWith("/v1/tokens/") && method === "DELETE") {
+    await fulfillEmpty(route, 204);
+    return true;
+  }
+
+  if (path.startsWith("/v1/users/") && method === "DELETE") {
+    await fulfillEmpty(route, 204);
+    return true;
+  }
+
+  if (path.match(/^\/v1\/users\/[^/]+\/password$/) && method === "PUT") {
+    await fulfillEmpty(route, 204);
+    return true;
+  }
+
+  if (path.match(/^\/v1\/users\/[^/]+\/role$/) && method === "PUT") {
+    await fulfillEmpty(route, 204);
+    return true;
+  }
+
+  if (path === "/v1/users" && method === "POST") {
+    await fulfillJson(route, { user: { ...adminUser, id: "new-user" } });
+    return true;
+  }
+
+  if (path === "/v1/tokens" && method === "POST") {
+    await fulfillJson(route, {
+      token: "ldb_test_token",
+      id: "tok-1",
+      name: "test",
+      prefix: "ldb_",
+      role: "readonly",
+      created_at: "2020-01-01T00:00:00Z",
+    });
+    return true;
+  }
+
+  if (path.match(/^\/v1\/collections\/[^/]+\/compact$/) && method === "POST") {
+    await fulfillEmpty(route, 202);
+    return true;
+  }
+
+  if (path === "/v1/contexts" && method === "POST") {
+    await fulfillJson(route, { id: "new-id" });
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Intercepts /v1/* so the UI can be exercised without a running LaightDB API.
  */
 export async function installApiMock(page: Page, scenario: ApiMockScenario) {
   await page.route("**/v1/**", async (route) => {
+    if (await tryFulfillSharedV1Route(route)) return;
+
     const req = route.request();
     const url = new URL(req.url());
     const path = url.pathname;
@@ -69,78 +224,6 @@ export async function installApiMock(page: Page, scenario: ApiMockScenario) {
       return fulfillEmpty(route, 204);
     }
 
-    if (path === "/v1/health" && method === "GET") {
-      return fulfillJson(route, { status: "ok" });
-    }
-
-    if (path === "/v1/stats" && method === "GET") {
-      return fulfillJson(route, { entries: 0, collections: 0, vector_nodes: 0 });
-    }
-
-    if (path === "/v1/collections" && method === "GET") {
-      return fulfillJson(route, { collections: ["demo"] });
-    }
-
-    if (path === "/v1/contexts" && method === "GET") {
-      return fulfillJson(route, { entries: [] });
-    }
-
-    if (path === "/v1/search" && method === "POST") {
-      return fulfillJson(route, { hits: [] });
-    }
-
-    if (path === "/v1/users" && method === "GET") {
-      return fulfillJson(route, { users: [] });
-    }
-
-    if (path === "/v1/tokens" && method === "GET") {
-      return fulfillJson(route, { tokens: [] });
-    }
-
-    const ctxMatch = /^\/v1\/contexts\/([^/]+)$/.exec(path);
-    if (ctxMatch && method === "GET") {
-      return fulfillJson(route, { ...sampleEntry, id: ctxMatch[1] });
-    }
-
-    if (path.startsWith("/v1/tokens/") && method === "DELETE") {
-      return fulfillEmpty(route, 204);
-    }
-
-    if (path.startsWith("/v1/users/") && method === "DELETE") {
-      return fulfillEmpty(route, 204);
-    }
-
-    if (path.match(/^\/v1\/users\/[^/]+\/password$/) && method === "PUT") {
-      return fulfillEmpty(route, 204);
-    }
-
-    if (path.match(/^\/v1\/users\/[^/]+\/role$/) && method === "PUT") {
-      return fulfillEmpty(route, 204);
-    }
-
-    if (path === "/v1/users" && method === "POST") {
-      return fulfillJson(route, { user: { ...adminUser, id: "new-user" } });
-    }
-
-    if (path === "/v1/tokens" && method === "POST") {
-      return fulfillJson(route, {
-        token: "ldb_test_token",
-        id: "tok-1",
-        name: "test",
-        prefix: "ldb_",
-        role: "readonly",
-        created_at: "2020-01-01T00:00:00Z",
-      });
-    }
-
-    if (path.match(/^\/v1\/collections\/[^/]+\/compact$/) && method === "POST") {
-      return fulfillEmpty(route, 202);
-    }
-
-    if (path === "/v1/contexts" && method === "POST") {
-      return fulfillJson(route, { id: "new-id" });
-    }
-
     if (process.env.DEBUG_E2E_MOCK) {
       console.warn("[e2e mock] unhandled", method, path);
     }
@@ -155,6 +238,8 @@ export type LoginApiOutcome = "success" | "failure";
  */
 export async function installLoginScenarioMock(page: Page, loginOutcome: LoginApiOutcome) {
   await page.route("**/v1/**", async (route) => {
+    if (await tryFulfillSharedV1Route(route)) return;
+
     const req = route.request();
     const url = new URL(req.url());
     const path = url.pathname;
@@ -175,33 +260,8 @@ export async function installLoginScenarioMock(page: Page, loginOutcome: LoginAp
     if (path === "/v1/auth/logout" && method === "POST") {
       return fulfillEmpty(route, 204);
     }
-    if (path === "/v1/health" && method === "GET") {
-      return fulfillJson(route, { status: "ok" });
-    }
-    if (path === "/v1/stats" && method === "GET") {
-      return fulfillJson(route, { entries: 0, collections: 0, vector_nodes: 0 });
-    }
-    if (path === "/v1/collections" && method === "GET") {
-      return fulfillJson(route, { collections: [] });
-    }
-    if (path === "/v1/contexts" && method === "GET") {
-      return fulfillJson(route, { entries: [] });
-    }
-    if (path === "/v1/search" && method === "POST") {
-      return fulfillJson(route, { hits: [] });
-    }
-    if (path === "/v1/users" && method === "GET") {
-      return fulfillJson(route, { users: [] });
-    }
-    if (path === "/v1/tokens" && method === "GET") {
-      return fulfillJson(route, { tokens: [] });
-    }
-    const ctxMatch = /^\/v1\/contexts\/([^/]+)$/.exec(path);
-    if (ctxMatch && method === "GET") {
-      return fulfillJson(route, { ...sampleEntry, id: ctxMatch[1] });
-    }
     if (process.env.DEBUG_E2E_MOCK) {
-      console.warn("[e2e mock] unhandled", method, path);
+      console.warn("[e2e mock] unhandled (login)", method, path);
     }
     return fulfillJson(route, {});
   });

@@ -37,7 +37,7 @@ func Start() error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	authStore, err := auth.NewFileAuthStore(filepath.Join(cfg.DataDir, "auth"), cfg.SessionTTL)
 	if err != nil {
@@ -63,6 +63,7 @@ func Start() error {
 	hs := server.NewHTTPServer(store, authStore)
 	hs.Mux.Handle("/mcp", ms.StreamableHTTPHandler())
 	handler := hs.BuildHandler(
+		server.CORSMiddleware(cfg.CorsOrigin),
 		auth.RateLimitMiddleware(rl),
 		auth.Middleware(authStore),
 	)

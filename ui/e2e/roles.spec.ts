@@ -28,4 +28,20 @@ test.describe("readonly user", () => {
     await expect(page.getByRole("link", { name: "API Tokens" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Users" })).not.toBeVisible();
   });
+
+  test("does not show Stress test (admin only)", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: "Stress test" })).not.toBeVisible();
+  });
+});
+
+test.describe("admin user — stress nav", () => {
+  test.beforeEach(async ({ page }) => {
+    await installApiMock(page, "admin");
+  });
+
+  test("shows Stress test in sidebar", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: "Stress test" })).toBeVisible();
+  });
 });

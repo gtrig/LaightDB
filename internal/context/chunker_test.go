@@ -3,8 +3,6 @@ package context
 import (
 	"strings"
 	"testing"
-
-	"github.com/gtrig/laightdb/internal/storage"
 )
 
 func TestChunkContent(t *testing.T) {
@@ -17,5 +15,5 @@ func TestChunkContent(t *testing.T) {
 	if ch[0].ParentID != "p1" {
 		t.Fatal(ch[0])
 	}
-	var _ storage.Chunk = ch[0]
+	_ = ch[0]
 }

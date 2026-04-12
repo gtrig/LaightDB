@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,8 @@ import (
 	"github.com/gtrig/laightdb/internal/summarize"
 )
 
+// Context cancellation: methods accept context.Context for API consistency and HTTP disconnect handling.
+// GraphOverview and Search check ctx.Err() during heavy loops; other methods may ignore ctx until extended.
 const (
 	docKeyPrefix      = "d:"
 	edgeKeyPrefix     = "e:"
@@ -29,6 +32,7 @@ const (
 
 // Store is the application facade over storage + indexes.
 type Store struct {
+	mu sync.RWMutex
 	dir   string
 	eng   *storage.Engine
 	ft    *index.FullText
@@ -37,6 +41,9 @@ type Store struct {
 	graph *index.GraphIndex
 	embed *embedding.Engine
 	sum   summarize.Summarizer
+
+	snapshotStop chan struct{}
+	snapshotWG   sync.WaitGroup
 }
 
 // OpenStore opens the database and indexes under dataDir.
@@ -67,7 +74,51 @@ func OpenStore(ctx context.Context, dataDir string, memBytes int, emb *embedding
 			return nil, err
 		}
 	}
+	if d := snapshotIntervalFromEnv(); d > 0 {
+		s.startSnapshotLoop(d)
+	}
 	return s, nil
+}
+
+func snapshotIntervalFromEnv() time.Duration {
+	s := strings.TrimSpace(os.Getenv("LAIGHTDB_SNAPSHOT_INTERVAL"))
+	if s == "" || s == "0" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d
+}
+
+func (s *Store) startSnapshotLoop(d time.Duration) {
+	s.snapshotStop = make(chan struct{})
+	s.snapshotWG.Add(1)
+	go func() {
+		defer s.snapshotWG.Done()
+		t := time.NewTicker(d)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				s.mu.Lock()
+				s.saveSnapshots()
+				s.mu.Unlock()
+			case <-s.snapshotStop:
+				return
+			}
+		}
+	}()
+}
+
+func (s *Store) stopSnapshotLoop() {
+	if s.snapshotStop == nil {
+		return
+	}
+	close(s.snapshotStop)
+	s.snapshotWG.Wait()
+	s.snapshotStop = nil
 }
 
 // loadSnapshots attempts to restore BM25, metadata, and graph indexes from snapshot files.
@@ -176,6 +227,9 @@ func (s *Store) rebuildIndexes() error {
 
 // Close saves index snapshots and releases resources.
 func (s *Store) Close() error {
+	s.stopSnapshotLoop()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.saveSnapshots()
 	return s.eng.Close()
 }
@@ -191,6 +245,8 @@ type PutRequest struct {
 // Put stores a new context entry; returns assigned ID.
 // If identical content was already stored, returns the existing entry's ID (idempotent).
 func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if req.Content == "" {
 		return "", fmt.Errorf("store put: empty content")
 	}
@@ -279,6 +335,8 @@ func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 // Get retrieves by ID at detail level.
 func (s *Store) Get(ctx context.Context, id string, d DetailLevel) (storage.ContextEntry, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	raw, ok := s.eng.Get(docKeyPrefix + id)
 	if !ok {
 		return storage.ContextEntry{}, fmt.Errorf("store get: not found")
@@ -292,6 +350,12 @@ func (s *Store) Get(ctx context.Context, id string, d DetailLevel) (storage.Cont
 
 // Delete removes an entry and updates indexes.
 func (s *Store) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleteUnlocked(ctx, id)
+}
+
+func (s *Store) deleteUnlocked(ctx context.Context, id string) error {
 	_ = ctx
 	key := docKeyPrefix + id
 	if err := s.eng.Delete(key); err != nil {
@@ -311,6 +375,8 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 
 // DeleteCollection removes all entries belonging to a collection and returns the count deleted.
 func (s *Store) DeleteCollection(ctx context.Context, collection string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	keys := s.eng.PrefixKeys(docKeyPrefix)
 	var deleted int
 	for _, k := range keys {
@@ -325,7 +391,7 @@ func (s *Store) DeleteCollection(ctx context.Context, collection string) (int, e
 		if ent.Collection != collection {
 			continue
 		}
-		if err := s.Delete(ctx, ent.ID); err != nil {
+		if err := s.deleteUnlocked(ctx, ent.ID); err != nil {
 			return deleted, fmt.Errorf("delete collection entry %s: %w", ent.ID, err)
 		}
 		deleted++
@@ -357,8 +423,13 @@ type SearchResult struct {
 
 // Search runs BM25 + vector RRF with optional metadata pre-filter and detail projection.
 func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if req.TopK <= 0 {
 		req.TopK = 10
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// P3: compute metadata allow-set before ranking to avoid wasting RRF slots.
@@ -400,6 +471,9 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	var out []SearchResult
 	seen := make(map[string]struct{})
 	for _, h := range merged {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// P1: parse chunk suffix to identify which chunk was the best match.
 		docID := h.ID
 		chunkIdx := -1
@@ -475,6 +549,8 @@ type EntryListItem struct {
 // ListEntries returns entries newest-first, optionally filtered by collection.
 func (s *Store) ListEntries(ctx context.Context, collection string, limit int) ([]EntryListItem, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if limit <= 0 {
 		limit = 100
 	}
@@ -518,6 +594,12 @@ func (s *Store) ListEntries(ctx context.Context, collection string, limit int) (
 // ListCollections returns distinct collection names.
 func (s *Store) ListCollections(ctx context.Context) ([]string, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.listCollectionsUnlocked()
+}
+
+func (s *Store) listCollectionsUnlocked() ([]string, error) {
 	keys := s.eng.PrefixKeys(docKeyPrefix)
 	seen := make(map[string]struct{})
 	for _, k := range keys {
@@ -544,6 +626,8 @@ func (s *Store) ListCollections(ctx context.Context) ([]string, error) {
 // Stats returns coarse database stats.
 func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	keys := s.eng.PrefixKeys(docKeyPrefix)
 	var count int
 	for _, k := range keys {
@@ -551,7 +635,7 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 			count++
 		}
 	}
-	cols, _ := s.ListCollections(ctx)
+	cols, _ := s.listCollectionsUnlocked()
 	return map[string]any{
 		"entries":      count,
 		"collections":  len(cols),
@@ -560,12 +644,18 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
-// Engine exposes the underlying storage engine for admin (compaction).
-func (s *Store) Engine() *storage.Engine { return s.eng }
+// RunCompaction runs LSM compaction while holding the store lock.
+func (s *Store) RunCompaction() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.eng.RunCompaction()
+}
 
 // StorageDiagnostics returns WAL/memtable/SSTable size information.
 func (s *Store) StorageDiagnostics(ctx context.Context) (storage.EngineDiagnostics, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.eng.Diagnostics()
 }
 
@@ -584,9 +674,11 @@ type PutEdgeRequest struct {
 }
 
 // PutEdge creates a new directed edge and returns its assigned ID.
-// It writes three LSM keys atomically (best-effort; the canonical e: key is written first).
+// It writes three LSM keys in one WAL sync (PutBatch).
 func (s *Store) PutEdge(ctx context.Context, req PutEdgeRequest) (string, error) {
 	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if req.FromID == "" || req.ToID == "" {
 		return "", fmt.Errorf("store put edge: FromID and ToID required")
 	}
@@ -605,17 +697,13 @@ func (s *Store) PutEdge(ctx context.Context, req PutEdgeRequest) (string, error)
 		CreatedAt: time.Now(),
 	}
 	data := storage.EncodeEdge(e)
-	// Canonical record.
-	if err := s.eng.Put(edgeKeyPrefix+id, data); err != nil {
+	batch := []storage.KV{
+		{Key: edgeKeyPrefix + id, Val: data},
+		{Key: edgeFwdKeyPrefix + req.FromID + ":" + id, Val: []byte(id)},
+		{Key: edgeRevKeyPrefix + req.ToID + ":" + id, Val: []byte(id)},
+	}
+	if err := s.eng.PutBatch(batch); err != nil {
 		return "", fmt.Errorf("store put edge: %w", err)
-	}
-	// Forward adjacency index: ef:<fromID>:<edgeID>
-	if err := s.eng.Put(edgeFwdKeyPrefix+req.FromID+":"+id, []byte(id)); err != nil {
-		return "", fmt.Errorf("store put edge fwd: %w", err)
-	}
-	// Reverse adjacency index: et:<toID>:<edgeID>
-	if err := s.eng.Put(edgeRevKeyPrefix+req.ToID+":"+id, []byte(id)); err != nil {
-		return "", fmt.Errorf("store put edge rev: %w", err)
 	}
 	s.graph.Add(id, req.FromID, req.ToID, req.Label, req.Source, req.Weight)
 	return id, nil
@@ -624,6 +712,8 @@ func (s *Store) PutEdge(ctx context.Context, req PutEdgeRequest) (string, error)
 // GetEdge retrieves a single edge by ID.
 func (s *Store) GetEdge(ctx context.Context, id string) (storage.Edge, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	raw, ok := s.eng.Get(edgeKeyPrefix + id)
 	if !ok {
 		return storage.Edge{}, fmt.Errorf("store get edge: not found")
@@ -634,6 +724,8 @@ func (s *Store) GetEdge(ctx context.Context, id string) (storage.Edge, error) {
 // DeleteEdge removes an edge and its adjacency index entries.
 func (s *Store) DeleteEdge(ctx context.Context, id string) error {
 	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	raw, ok := s.eng.Get(edgeKeyPrefix + id)
 	if !ok {
 		return fmt.Errorf("store delete edge: not found")
@@ -642,11 +734,14 @@ func (s *Store) DeleteEdge(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("store delete edge decode: %w", err)
 	}
-	if err := s.eng.Delete(edgeKeyPrefix + id); err != nil {
+	keys := []string{
+		edgeKeyPrefix + id,
+		edgeFwdKeyPrefix + e.FromID + ":" + id,
+		edgeRevKeyPrefix + e.ToID + ":" + id,
+	}
+	if err := s.eng.DeleteBatch(keys); err != nil {
 		return fmt.Errorf("store delete edge: %w", err)
 	}
-	_ = s.eng.Delete(edgeFwdKeyPrefix + e.FromID + ":" + id)
-	_ = s.eng.Delete(edgeRevKeyPrefix + e.ToID + ":" + id)
 	s.graph.Remove(id)
 	return nil
 }
@@ -654,6 +749,8 @@ func (s *Store) DeleteEdge(ctx context.Context, id string) error {
 // ListEdgesFrom returns all edges whose FromID equals nodeID.
 func (s *Store) ListEdgesFrom(ctx context.Context, nodeID string) ([]storage.Edge, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	prefix := edgeFwdKeyPrefix + nodeID + ":"
 	keys := s.eng.PrefixKeys(prefix)
 	return s.loadEdgesByKeys(keys)
@@ -662,6 +759,8 @@ func (s *Store) ListEdgesFrom(ctx context.Context, nodeID string) ([]storage.Edg
 // ListEdgesTo returns all edges whose ToID equals nodeID.
 func (s *Store) ListEdgesTo(ctx context.Context, nodeID string) ([]storage.Edge, error) {
 	_ = ctx
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	prefix := edgeRevKeyPrefix + nodeID + ":"
 	keys := s.eng.PrefixKeys(prefix)
 	return s.loadEdgesByKeys(keys)
@@ -694,22 +793,30 @@ func (s *Store) loadEdgesByKeys(adjKeys []string) ([]storage.Edge, error) {
 
 // GraphOutgoing returns the GraphIndex outgoing EdgeRefs for fast in-memory traversal.
 func (s *Store) GraphOutgoing(nodeID string) []index.EdgeRef {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.graph.Outgoing(nodeID)
 }
 
 // GraphIncoming returns the GraphIndex incoming EdgeRefs.
 func (s *Store) GraphIncoming(nodeID string) []index.EdgeRef {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.graph.Incoming(nodeID)
 }
 
 // GraphNeighborhood returns nodes reachable from nodeID via BFS (both directions)
 // up to maxDepth, scored by graph proximity. Used by REST and MCP handlers.
 func (s *Store) GraphNeighborhood(nodeID string, maxDepth int) []index.RankedID {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.graph.Neighborhood(nodeID, maxDepth)
 }
 
 // SubtreeEdges returns edges in a directed BFS from rootID following outgoing edges.
 func (s *Store) SubtreeEdges(rootID string, maxDepth int) []index.EdgeRef {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.graph.SubtreeEdges(rootID, maxDepth)
 }
 
@@ -722,6 +829,8 @@ type SuggestedLink struct {
 // SuggestLinks finds the nearest vector neighbors of nodeID that are not already
 // linked via an explicit edge, above the given similarity threshold.
 func (s *Store) SuggestLinks(ctx context.Context, nodeID string, threshold float64, topK int) ([]SuggestedLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	raw, ok := s.eng.Get(docKeyPrefix + nodeID)
 	if !ok {
 		return nil, fmt.Errorf("store suggest links: node not found")
@@ -786,6 +895,11 @@ type GraphOverviewResponse struct {
 // GraphOverview returns all edges and a deduplicated set of node summaries.
 // limit caps the total node count (default 500, max 2000).
 func (s *Store) GraphOverview(ctx context.Context, collection string, limit int) (GraphOverviewResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return GraphOverviewResponse{}, err
+	}
 	if limit <= 0 {
 		limit = 500
 	}
@@ -808,6 +922,9 @@ func (s *Store) GraphOverview(ctx context.Context, collection string, limit int)
 	keys := s.eng.PrefixKeys(docKeyPrefix)
 	docs := make(map[string]docMeta, len(keys))
 	for _, k := range keys {
+		if err := ctx.Err(); err != nil {
+			return GraphOverviewResponse{}, err
+		}
 		raw, ok := s.eng.Get(k)
 		if !ok {
 			continue

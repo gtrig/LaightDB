@@ -153,6 +153,60 @@ func (e *Engine) Delete(key string) error {
 	return nil
 }
 
+// KV is a single key/value pair for PutBatch.
+type KV struct {
+	Key string
+	Val []byte
+}
+
+// PutBatch appends multiple puts to the WAL, syncs once, then applies all to the memtable.
+// If a flush is needed mid-batch, flushLocked runs between keys; all WAL records are durable after the first sync.
+func (e *Engine) PutBatch(pairs []KV) error {
+	if len(pairs) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i := range pairs {
+		if err := e.wal.AppendPut(pairs[i].Key, pairs[i].Val); err != nil {
+			return fmt.Errorf("engine wal put: %w", err)
+		}
+	}
+	if err := e.wal.Sync(); err != nil {
+		return fmt.Errorf("engine wal sync: %w", err)
+	}
+	for i := range pairs {
+		e.mem.Put(pairs[i].Key, pairs[i].Val)
+		if e.mem.ShouldFlush() {
+			if err := e.flushLocked(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteBatch appends multiple deletes to the WAL, syncs once, then applies all to the memtable.
+func (e *Engine) DeleteBatch(keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, k := range keys {
+		if err := e.wal.AppendDelete(k); err != nil {
+			return fmt.Errorf("engine wal del: %w", err)
+		}
+	}
+	if err := e.wal.Sync(); err != nil {
+		return fmt.Errorf("engine wal sync: %w", err)
+	}
+	for _, k := range keys {
+		e.mem.Delete(k)
+	}
+	return nil
+}
+
 func (e *Engine) flushLocked() error {
 	path := filepath.Join(e.dir, "sst", fmt.Sprintf("%06d.sst", e.nextSSTSeq))
 	w, err := NewSSTWriter(path)

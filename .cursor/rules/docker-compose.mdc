@@ -1,0 +1,20 @@
+---
+description: Run and develop LaightDB via Docker Compose (primary workflow)
+alwaysApply: true
+---
+
+# Docker Compose workflow
+
+**Assume all day-to-day development and running the application use [docker-compose.yml](docker-compose.yml), not ad-hoc local processes**, unless the user explicitly asks otherwise.
+
+## Usage
+
+- **Production-style stack:** API plus UI — `docker compose up -d` (services `laightdb`, `laightdb-ui`; API on `LAIGHTDB_HTTP_PORT` default 8080, UI on `LAIGHTDB_UI_PORT` default 3000).
+- **Dev profile (hot reload, bind mounts):** `docker compose --profile dev up` — brings up `laightdb-dev`, optional `laightdb-ui-dev`, optional `laightdb-dev-mcp` per [docker-compose.yml](docker-compose.yml).
+- Environment and ports: Compose substitutes from `.env` (gitignored); see [README.md](README.md) for variables such as `LAIGHTDB_HTTP_PORT`, summarizer keys, and MCP transport.
+
+## Implications for agents
+
+- Prefer documenting or suggesting **Compose-based** commands (build/up/logs/exec) when telling the user how to run the server, UI, or dev MCP.
+- Local `go run`, `npm run dev`, or bare binaries are secondary; do not present them as the default workflow for this repo.
+- When debugging “localhost” behavior, align ports with Compose defaults or the user’s `.env`.

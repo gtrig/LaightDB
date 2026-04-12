@@ -93,7 +93,7 @@ Dev tools (tracked via `tool` directive in go.mod):
 | `github.com/golangci/golangci-lint/cmd/golangci-lint` | Linter (`go tool golangci-lint run`) |
 | `github.com/air-verse/air` | Hot reload for dev Docker container |
 
-Everything else (storage engine, BM25, chunking, binary codec) is built from scratch. Use stdlib wherever possible. Do NOT add dependencies without explicit approval.
+Everything else (storage engine, BM25, chunking, binary codec) is built from scratch. Use stdlib wherever possible. Do NOT add dependencies without explicit approval. After adding or removing imports, run **`go mod tidy`** so `go.mod` keeps direct vs `// indirect` requires accurate.
 
 ## Conventions
 
@@ -165,9 +165,12 @@ The `ef:` and `et:` prefix scans give O(degree) adjacency lookup without full-ta
 - `POST   /v1/search`               -- Hybrid search (query, filters, top_k, detail)
 - `DELETE /v1/contexts/{id}`         -- Delete
 - `GET    /v1/collections`           -- List collections
+- `DELETE /v1/collections/{name}`    -- Delete collection and all its entries
 - `GET    /v1/stats`                 -- Database stats (entries, collections, vector nodes, edges)
-- `POST   /v1/collections/{name}/compact` -- Trigger storage compaction
+- `POST   /v1/collections/{name}/compact` -- Trigger storage compaction (via `Store.RunCompaction()` under the store lock)
 - `GET    /v1/health`                -- Health check
+- `GET    /v1/stress/queries`        -- Sample queries for stress harness (admin or open mode)
+- `POST   /v1/stress`               -- Run write/search stress workload (admin or open mode)
 
 ### Graph / Edge Endpoints
 

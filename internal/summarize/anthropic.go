@@ -13,15 +13,17 @@ import (
 )
 
 type anthropic struct {
-	apiKey string
-	client *http.Client
+	apiKey   string
+	messages string // full URL for POST (default https://api.anthropic.com/v1/messages)
+	client   *http.Client
 }
 
 // NewAnthropic creates an Anthropic summarizer.
 func NewAnthropic() Summarizer {
 	return &anthropic{
-		apiKey: os.Getenv("LAIGHTDB_ANTHROPIC_API_KEY"),
-		client: &http.Client{Timeout: 60 * time.Second},
+		apiKey:   os.Getenv("LAIGHTDB_ANTHROPIC_API_KEY"),
+		messages: "https://api.anthropic.com/v1/messages",
+		client:   &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -37,7 +39,7 @@ func (a *anthropic) Summarize(ctx context.Context, content string) (string, erro
 		},
 	}
 	b, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.messages, bytes.NewReader(b))
 	if err != nil {
 		return "", err
 	}
@@ -48,7 +50,7 @@ func (a *anthropic) Summarize(ctx context.Context, content string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("summarize anthropic: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("summarize anthropic: status %d: %s", resp.StatusCode, raw)

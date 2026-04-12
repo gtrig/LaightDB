@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	lctx "github.com/gtrig/laightdb/internal/context"
-	"github.com/gtrig/laightdb/internal/index"
 )
 
 // handlePostEdge creates a new directed edge between two context entries.
@@ -232,19 +231,4 @@ func (s *HTTPServer) handleGraphOverview(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(overview)
-}
-
-// edgeRefsToJSON is a helper used by the subtree handler.
-func edgeRefsToJSON(refs []index.EdgeRef) []map[string]any {
-	out := make([]map[string]any, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, map[string]any{
-			"edge_id":   r.EdgeID,
-			"target_id": r.TargetID,
-			"label":     r.Label,
-			"weight":    r.Weight,
-			"source":    r.Source,
-		})
-	}
-	return out
 }

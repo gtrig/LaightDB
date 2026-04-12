@@ -49,3 +49,47 @@ func TestEngineDeleteShadowsSST(t *testing.T) {
 		t.Fatal("expected miss after delete")
 	}
 }
+
+func TestEnginePutBatchSingleSync(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	e, err := OpenEngine(dir, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+	err = e.PutBatch([]KV{
+		{"a", []byte{1}},
+		{"b", []byte{2}},
+		{"c", []byte{3}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"a", "b", "c"} {
+		v, ok := e.Get(k)
+		if !ok || len(v) != 1 {
+			t.Fatalf("key %s: ok=%v v=%v", k, ok, v)
+		}
+	}
+}
+
+func TestEngineDeleteBatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	e, err := OpenEngine(dir, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+	_ = e.PutBatch([]KV{{"x", []byte{1}}, {"y", []byte{2}}})
+	if err := e.DeleteBatch([]string{"x", "y"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e.Get("x"); ok {
+		t.Fatal("x should be gone")
+	}
+	if _, ok := e.Get("y"); ok {
+		t.Fatal("y should be gone")
+	}
+}

@@ -189,7 +189,7 @@ func TestUserCRUDEndpoints(t *testing.T) {
 			Role string `json:"role"`
 		} `json:"user"`
 	}
-	json.NewDecoder(rec.Body).Decode(&created)
+	_ = json.NewDecoder(rec.Body).Decode(&created)
 	if created.User.Role != "admin" {
 		t.Fatal("first user should be admin")
 	}
@@ -249,7 +249,7 @@ func TestTokenCRUDEndpoints(t *testing.T) {
 		Token string `json:"token"`
 		ID    string `json:"id"`
 	}
-	json.NewDecoder(rec.Body).Decode(&tokenResp)
+	_ = json.NewDecoder(rec.Body).Decode(&tokenResp)
 	if tokenResp.Token == "" {
 		t.Fatal("expected plaintext token")
 	}
@@ -288,7 +288,7 @@ func TestAuthStatus(t *testing.T) {
 	var statusResp struct {
 		AuthRequired bool `json:"auth_required"`
 	}
-	json.NewDecoder(rec.Body).Decode(&statusResp)
+	_ = json.NewDecoder(rec.Body).Decode(&statusResp)
 	if statusResp.AuthRequired {
 		t.Fatal("should not require auth with no users")
 	}

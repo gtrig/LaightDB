@@ -228,3 +228,69 @@ func TestGraphSuggestLinks_Handler_NotFound(t *testing.T) {
 	}
 }
 
+func TestGraphOverview_Handler(t *testing.T) {
+	t.Parallel()
+	s, as := newTestServer(t)
+	h := testHandler(s, as)
+
+	st1 := `{"collection":"c1","content":"alpha overview","content_type":"doc"}`
+	req1 := httptest.NewRequest(http.MethodPost, "/v1/contexts", strings.NewReader(st1))
+	req1.Header.Set("Content-Type", "application/json")
+	rec1 := httptest.NewRecorder()
+	h.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("context 1: %d %s", rec1.Code, rec1.Body.String())
+	}
+	var id1 map[string]string
+	if err := json.NewDecoder(rec1.Body).Decode(&id1); err != nil {
+		t.Fatal(err)
+	}
+
+	st2 := `{"collection":"c1","content":"beta overview","content_type":"doc"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/contexts", strings.NewReader(st2))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("context 2: %d", rec2.Code)
+	}
+	var id2 map[string]string
+	if err := json.NewDecoder(rec2.Body).Decode(&id2); err != nil {
+		t.Fatal(err)
+	}
+
+	edgeBody := fmt.Sprintf(`{"from_id":%q,"to_id":%q,"label":"rel","weight":1.0}`, id1["id"], id2["id"])
+	reqE := httptest.NewRequest(http.MethodPost, "/v1/edges", strings.NewReader(edgeBody))
+	reqE.Header.Set("Content-Type", "application/json")
+	recE := httptest.NewRecorder()
+	h.ServeHTTP(recE, reqE)
+	if recE.Code != http.StatusCreated {
+		t.Fatalf("edge: %d %s", recE.Code, recE.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/graph/overview?limit=50", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Nodes []struct {
+			ID string `json:"id"`
+		} `json:"nodes"`
+		Edges []struct {
+			EdgeID string `json:"edge_id"`
+		} `json:"edges"`
+		Truncated bool `json:"truncated"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Edges) != 1 {
+		t.Fatalf("edges: got %d", len(out.Edges))
+	}
+	if len(out.Nodes) < 2 {
+		t.Fatalf("nodes: got %d", len(out.Nodes))
+	}
+}
+

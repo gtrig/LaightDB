@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import Layout from "./components/Layout";
@@ -12,7 +13,8 @@ import StressPage from "./components/StressPage";
 import LoginPage from "./components/LoginPage";
 import UsersPage from "./components/UsersPage";
 import TokensPage from "./components/TokensPage";
-import StorageExplorer3D from "./components/StorageExplorer3D";
+
+const StorageExplorer3D = lazy(() => import("./components/StorageExplorer3D"));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, authRequired, loading } = useAuth();
@@ -94,7 +96,20 @@ export default function App() {
             </RequireAdminOrBootstrap>
           }
         />
-        <Route path="explorer" element={<StorageExplorer3D />} />
+        <Route
+          path="explorer"
+          element={
+            <Suspense
+              fallback={
+                <div style={{ minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)" }}>
+                  Loading…
+                </div>
+              }
+            >
+              <StorageExplorer3D />
+            </Suspense>
+          }
+        />
         <Route path="contexts/:id" element={<ContextDetail />} />
         <Route
           path="settings/users"

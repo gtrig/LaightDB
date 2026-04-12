@@ -30,7 +30,7 @@ func newTestMCPSession(t *testing.T) (*mcp.ClientSession, *lctx.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { sess.Close() })
+	t.Cleanup(func() { _ = sess.Close() })
 	return sess, store
 }
 

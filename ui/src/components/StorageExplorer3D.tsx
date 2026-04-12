@@ -397,14 +397,30 @@ function StatusBox({ children }: { children: React.ReactNode }) {
 
 type Tab = "graph" | "engine";
 
+/** One perspective per tab; avoids remounting Canvas when switching tabs (WebGL context loss). */
+function CameraRig({ tab }: { tab: Tab }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (tab === "graph") {
+      camera.position.set(0, 0, 160);
+      if ("fov" in camera) (camera as THREE.PerspectiveCamera).fov = 50;
+    } else {
+      camera.position.set(60, 60, 120);
+      if ("fov" in camera) (camera as THREE.PerspectiveCamera).fov = 45;
+    }
+    camera.updateProjectionMatrix();
+  }, [tab, camera]);
+  return null;
+}
+
 export default function StorageExplorer3D() {
   const [tab, setTab] = useState<Tab>("graph");
   const [overview, setOverview] = useState<GraphOverview | null>(null);
   const [diag, setDiag] = useState<StorageDiagnostics | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [diagError, setDiagError] = useState<string | null>(null);
-  const [loadingGraph, setLoadingGraph] = useState(false);
-  const [loadingDiag, setLoadingDiag] = useState(false);
+  const [loadingGraph, setLoadingGraph] = useState(true);
+  const [loadingDiag, setLoadingDiag] = useState(true);
   const positionsRef = useRef<Map<string, [number, number, number]>>(new Map());
   const [positions, setPositions] = useState<Map<string, [number, number, number]>>(new Map());
 
@@ -440,6 +456,7 @@ export default function StorageExplorer3D() {
   useEffect(() => { void loadDiag(); }, [loadDiag]);
 
   const canvasStyle: React.CSSProperties = {
+    position: "relative",
     width: "100%",
     height: "calc(100vh - 220px)",
     minHeight: 420,
@@ -448,6 +465,21 @@ export default function StorageExplorer3D() {
     background: "linear-gradient(160deg, #0a0a14 0%, #0f172a 60%, #1a1040 100%)",
     border: "1px solid var(--outline-variant)",
   };
+
+  const showGraphCanvas =
+    tab === "graph" &&
+    !loadingGraph &&
+    !graphError &&
+    overview !== null &&
+    overview.nodes.length > 0;
+
+  const showEngineCanvas =
+    tab === "engine" &&
+    !loadingDiag &&
+    !diagError &&
+    diag !== null;
+
+  const showCanvas = showGraphCanvas || showEngineCanvas;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -499,66 +531,54 @@ export default function StorageExplorer3D() {
         ))}
       </div>
 
-      {/* Graph tab */}
-      {tab === "graph" && (
-        <div style={canvasStyle}>
-          {loadingGraph && <StatusBox>Computing force layout…</StatusBox>}
-          {graphError && <StatusBox>Error: {graphError}</StatusBox>}
-          {!loadingGraph && !graphError && overview && (
-            <>
-              {overview.nodes.length === 0 ? (
-                <StatusBox>No graph data yet. Store some context entries and link them.</StatusBox>
-              ) : (
-                <Canvas
-                  camera={{ position: [0, 0, 160], fov: 50 }}
-                  style={{ width: "100%", height: "100%" }}
-                >
-                  <Suspense fallback={null}>
-                    <GraphScene overview={overview} positions={positions} />
-                    <OrbitControls enableDamping dampingFactor={0.08} />
-                  </Suspense>
-                </Canvas>
-              )}
-              {overview.truncated && (
-                <div style={{
-                  position: "absolute",
-                  bottom: 12,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  background: "rgba(245,158,11,0.15)",
-                  border: "1px solid rgba(245,158,11,0.4)",
-                  borderRadius: 8,
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  color: "#fbbf24",
-                  pointerEvents: "none",
-                }}>
-                  Graph truncated at 500 nodes
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* Single viewport: one WebGL Canvas shared across tabs to avoid context loss when switching. */}
+      <div style={canvasStyle}>
+        {tab === "graph" && loadingGraph && <StatusBox>Computing force layout…</StatusBox>}
+        {tab === "graph" && graphError && <StatusBox>Error: {graphError}</StatusBox>}
+        {tab === "graph" && !loadingGraph && !graphError && overview && overview.nodes.length === 0 && (
+          <StatusBox>No graph data yet. Store some context entries and link them.</StatusBox>
+        )}
 
-      {/* Engine tab */}
-      {tab === "engine" && (
-        <div style={canvasStyle}>
-          {loadingDiag && <StatusBox>Loading diagnostics…</StatusBox>}
-          {diagError && <StatusBox>Error: {diagError}</StatusBox>}
-          {!loadingDiag && !diagError && diag && (
-            <Canvas
-              camera={{ position: [60, 60, 120], fov: 45 }}
-              style={{ width: "100%", height: "100%" }}
-            >
-              <Suspense fallback={null}>
-                <EngineScene diag={diag} />
-                <OrbitControls enableDamping dampingFactor={0.08} />
-              </Suspense>
-            </Canvas>
-          )}
-        </div>
-      )}
+        {tab === "engine" && loadingDiag && <StatusBox>Loading diagnostics…</StatusBox>}
+        {tab === "engine" && diagError && <StatusBox>Error: {diagError}</StatusBox>}
+
+        {tab === "graph" && !loadingGraph && !graphError && overview && overview.truncated && overview.nodes.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 2,
+              background: "rgba(245,158,11,0.15)",
+              border: "1px solid rgba(245,158,11,0.4)",
+              borderRadius: 8,
+              padding: "4px 12px",
+              fontSize: 12,
+              color: "#fbbf24",
+              pointerEvents: "none",
+            }}
+          >
+            Graph truncated at 500 nodes
+          </div>
+        )}
+
+        {showCanvas && (
+          <Canvas
+            camera={{ position: [0, 0, 160], fov: 50 }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+          >
+            <CameraRig tab={tab} />
+            <Suspense fallback={null}>
+              {showGraphCanvas && overview && (
+                <GraphScene overview={overview} positions={positions} />
+              )}
+              {showEngineCanvas && diag && <EngineScene diag={diag} />}
+              <OrbitControls enableDamping dampingFactor={0.08} />
+            </Suspense>
+          </Canvas>
+        )}
+      </div>
 
       {/* Legend */}
       {tab === "engine" && diag && !loadingDiag && !diagError && (

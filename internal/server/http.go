@@ -223,7 +223,7 @@ func (s *HTTPServer) handleDeleteCollection(w http.ResponseWriter, r *http.Reque
 func (s *HTTPServer) handleCompact(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	_ = name
-	if err := s.Store.Engine().RunCompaction(); err != nil {
+	if err := s.Store.RunCompaction(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

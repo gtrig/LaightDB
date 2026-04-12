@@ -65,6 +65,8 @@ Configuration is **environment variables and flags only** (no config file). Comm
 | `LAIGHTDB_OPENAI_BASE_URL` | OpenAI-compatible API root including `/v1` (default: `https://api.openai.com/v1`) |
 | `LAIGHTDB_OPENAI_MODEL` | Chat model id (default: `gpt-4o-mini`) |
 | `LAIGHTDB_OPENAI_API_KEY` | Required for the real OpenAI API; optional for local OpenAI-compatible servers |
+| `LAIGHTDB_CORS_ORIGIN` | If set (e.g. `https://localhost:3000`), enables `Access-Control-Allow-Origin` for browser clients calling the API directly; empty disables CORS |
+| `LAIGHTDB_SNAPSHOT_INTERVAL` | How often to write BM25/metadata/graph snapshot files (e.g. `5m`); `0` or unset disables background snapshots |
 
 See [AGENTS.md](AGENTS.md) for the full list as the binary is implemented.
 
@@ -231,8 +233,11 @@ Same capabilities as MCP, for scripts and integrations:
 | `POST` | `/v1/search` | Hybrid search (BM25 + vector) |
 | `DELETE` | `/v1/contexts/{id}` | Delete |
 | `GET` | `/v1/collections` | List collections |
+| `DELETE` | `/v1/collections/{name}` | Delete collection and all entries |
 | `GET` | `/v1/stats` | Database stats (entries, collections, vector nodes, edges) |
 | `POST` | `/v1/collections/{name}/compact` | Request compaction |
+| `GET` | `/v1/stress/queries` | Sample queries for stress harness |
+| `POST` | `/v1/stress` | Run write/search stress workload |
 | `GET` | `/v1/health` | Health check |
 | `POST` | `/v1/auth/login` | Login (returns session cookie) |
 | `POST` | `/v1/auth/logout` | Logout (clears session) |
@@ -312,4 +317,4 @@ Persist data with a volume mounted at `LAIGHTDB_DATA_DIR` (e.g. `/data` in the c
 
 ## License
 
-Specify in [LICENSE](LICENSE) when added.
+LaightDB is released under the [MIT License](LICENSE).

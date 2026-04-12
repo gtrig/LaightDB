@@ -30,7 +30,7 @@ func TestMCPStoreSearchGetGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	res, err := sess.CallTool(ctx, &mcp.CallToolParams{
 		Name: "store_context",
