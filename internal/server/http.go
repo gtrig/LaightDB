@@ -36,6 +36,16 @@ func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPSer
 	m.HandleFunc("GET /v1/stress/queries", s.handleGetStressQueries)
 	m.HandleFunc("POST /v1/stress", s.handlePostStress)
 
+	// Graph / Edge routes
+	m.HandleFunc("POST /v1/edges", s.handlePostEdge)
+	m.HandleFunc("GET /v1/edges", s.handleListEdges)
+	m.HandleFunc("GET /v1/edges/{id}", s.handleGetEdge)
+	m.HandleFunc("DELETE /v1/edges/{id}", s.handleDeleteEdge)
+	m.HandleFunc("GET /v1/graph/{id}/neighbors", s.handleGraphNeighbors)
+	m.HandleFunc("GET /v1/graph/{id}/subtree", s.handleGraphSubtree)
+	m.HandleFunc("POST /v1/graph/search", s.handleGraphSearch)
+	m.HandleFunc("GET /v1/graph/{id}/suggest-links", s.handleGraphSuggestLinks)
+
 	// Auth routes
 	m.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	m.HandleFunc("POST /v1/auth/logout", s.handleLogout)

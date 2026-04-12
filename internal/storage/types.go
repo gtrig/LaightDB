@@ -26,3 +26,16 @@ type ContextEntry struct {
 	TokenCount        int
 	CompactTokenCount int // token count for CompactContent
 }
+
+// Edge is a directed relationship between two ContextEntry nodes.
+// Serialized via binary codec in edge_codec.go.
+type Edge struct {
+	ID        string            `json:"id"`
+	FromID    string            `json:"from_id"`
+	ToID      string            `json:"to_id"`
+	Label     string            `json:"label"`    // e.g. "child", "related_to", "depends_on", "auto_similar"
+	Weight    float64           `json:"weight"`   // user importance or cosine similarity for auto edges
+	Source    string            `json:"source"`   // "user" or "auto"
+	Metadata  map[string]string `json:"metadata"`
+	CreatedAt time.Time         `json:"created_at"`
+}

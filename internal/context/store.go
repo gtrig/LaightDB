@@ -18,9 +18,13 @@ import (
 )
 
 const (
-	docKeyPrefix     = "d:"
-	ftSnapshotFile   = "fulltext.snap"
-	metaSnapshotFile = "metadata.snap"
+	docKeyPrefix      = "d:"
+	edgeKeyPrefix     = "e:"
+	edgeFwdKeyPrefix  = "ef:"
+	edgeRevKeyPrefix  = "et:"
+	ftSnapshotFile    = "fulltext.snap"
+	metaSnapshotFile  = "metadata.snap"
+	graphSnapshotFile = "graph.snap"
 )
 
 // Store is the application facade over storage + indexes.
@@ -30,6 +34,7 @@ type Store struct {
 	ft    *index.FullText
 	meta  *index.MetadataIndex
 	vec   *index.VectorIndex
+	graph *index.GraphIndex
 	embed *embedding.Engine
 	sum   summarize.Summarizer
 }
@@ -52,6 +57,7 @@ func OpenStore(ctx context.Context, dataDir string, memBytes int, emb *embedding
 		ft:    index.NewFullText(),
 		meta:  index.NewMetadataIndex(),
 		vec:   vec,
+		graph: index.NewGraphIndex(),
 		embed: emb,
 		sum:   sum,
 	}
@@ -64,8 +70,8 @@ func OpenStore(ctx context.Context, dataDir string, memBytes int, emb *embedding
 	return s, nil
 }
 
-// loadSnapshots attempts to restore BM25 and metadata indexes from snapshot files.
-// Returns true if both loaded successfully and are consistent with the engine.
+// loadSnapshots attempts to restore BM25, metadata, and graph indexes from snapshot files.
+// Returns true if all loaded successfully and are consistent with the engine.
 func (s *Store) loadSnapshots() bool {
 	ftData, err := os.ReadFile(filepath.Join(s.dir, ftSnapshotFile))
 	if err != nil {
@@ -99,6 +105,10 @@ func (s *Store) loadSnapshots() bool {
 	if engineDocCount == 0 && ft.N == 0 {
 		s.ft = ft
 		s.meta = meta
+		// Load graph snapshot if present; ignore errors (graph is rebuilt from LSM if missing).
+		if g := s.tryLoadGraphSnapshot(); g != nil {
+			s.graph = g
+		}
 		return true
 	}
 	// Non-empty engine but empty snapshot → snapshot is stale, rebuild.
@@ -107,13 +117,29 @@ func (s *Store) loadSnapshots() bool {
 	}
 	s.ft = ft
 	s.meta = meta
+	if g := s.tryLoadGraphSnapshot(); g != nil {
+		s.graph = g
+	}
 	return true
 }
 
-// saveSnapshots writes BM25 and metadata index snapshots to disk.
+func (s *Store) tryLoadGraphSnapshot() *index.GraphIndex {
+	data, err := os.ReadFile(filepath.Join(s.dir, graphSnapshotFile))
+	if err != nil {
+		return nil
+	}
+	g, err := index.DecodeGraphSnapshot(data)
+	if err != nil {
+		return nil
+	}
+	return g
+}
+
+// saveSnapshots writes BM25, metadata, and graph index snapshots to disk.
 func (s *Store) saveSnapshots() {
 	_ = os.WriteFile(filepath.Join(s.dir, ftSnapshotFile), s.ft.EncodeSnapshot(), 0o644)
 	_ = os.WriteFile(filepath.Join(s.dir, metaSnapshotFile), s.meta.EncodeSnapshot(), 0o644)
+	_ = os.WriteFile(filepath.Join(s.dir, graphSnapshotFile), s.graph.EncodeSnapshot(), 0o644)
 }
 
 func (s *Store) rebuildIndexes() error {
@@ -132,6 +158,18 @@ func (s *Store) rebuildIndexes() error {
 			s.ft.AddDocument(fmt.Sprintf("%s#%d", ent.ID, ch.Index), ch.Text)
 		}
 		s.meta.Set(ent.ID, ent.Metadata)
+	}
+	// Rebuild graph index from edge LSM keys.
+	for _, k := range s.eng.PrefixKeys(edgeKeyPrefix) {
+		raw, ok := s.eng.Get(k)
+		if !ok {
+			continue
+		}
+		e, err := storage.DecodeEdge(raw)
+		if err != nil {
+			continue
+		}
+		s.graph.Add(e.ID, e.FromID, e.ToID, e.Label, e.Source, e.Weight)
 	}
 	return nil
 }
@@ -297,11 +335,13 @@ func (s *Store) DeleteCollection(ctx context.Context, collection string) (int, e
 
 // SearchRequest is a hybrid query.
 type SearchRequest struct {
-	Query      string
-	Collection string
-	Filters    map[string]string
-	TopK       int
-	Detail     DetailLevel
+	Query       string
+	Collection  string
+	Filters     map[string]string
+	TopK        int
+	Detail      DetailLevel
+	FocusNodeID string // optional: boosts graph-proximity of this node via RRF
+	MaxDepth    int    // graph BFS depth when FocusNodeID is set (0 = unlimited)
 }
 
 // SearchResult is one ranked hit.
@@ -347,7 +387,15 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 			}
 		}
 	}
-	merged := index.RRF([][]index.RankedID{ftHits, vecHits}, req.TopK*2)
+	// Third signal: graph proximity from a focus node.
+	var graphHits []index.RankedID
+	if req.FocusNodeID != "" {
+		graphHits = s.graph.Neighborhood(req.FocusNodeID, req.MaxDepth)
+		if allow != nil {
+			graphHits = filterHitsByDocID(graphHits, allow)
+		}
+	}
+	merged := index.RRF([][]index.RankedID{ftHits, vecHits, graphHits}, req.TopK*2)
 
 	var out []SearchResult
 	seen := make(map[string]struct{})
@@ -508,8 +556,205 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 		"entries":      count,
 		"collections":  len(cols),
 		"vector_nodes": s.vec.Len(),
+		"edges":        s.graph.Len(),
 	}, nil
 }
 
 // Engine exposes the underlying storage engine for admin (compaction).
 func (s *Store) Engine() *storage.Engine { return s.eng }
+
+// -------------------------------------------------------------------
+// Edge / Graph API
+// -------------------------------------------------------------------
+
+// PutEdgeRequest is the input to PutEdge.
+type PutEdgeRequest struct {
+	FromID   string
+	ToID     string
+	Label    string
+	Weight   float64
+	Source   string
+	Metadata map[string]string
+}
+
+// PutEdge creates a new directed edge and returns its assigned ID.
+// It writes three LSM keys atomically (best-effort; the canonical e: key is written first).
+func (s *Store) PutEdge(ctx context.Context, req PutEdgeRequest) (string, error) {
+	_ = ctx
+	if req.FromID == "" || req.ToID == "" {
+		return "", fmt.Errorf("store put edge: FromID and ToID required")
+	}
+	if req.Source == "" {
+		req.Source = "user"
+	}
+	id := uuid.New().String()
+	e := storage.Edge{
+		ID:        id,
+		FromID:    req.FromID,
+		ToID:      req.ToID,
+		Label:     req.Label,
+		Weight:    req.Weight,
+		Source:    req.Source,
+		Metadata:  req.Metadata,
+		CreatedAt: time.Now(),
+	}
+	data := storage.EncodeEdge(e)
+	// Canonical record.
+	if err := s.eng.Put(edgeKeyPrefix+id, data); err != nil {
+		return "", fmt.Errorf("store put edge: %w", err)
+	}
+	// Forward adjacency index: ef:<fromID>:<edgeID>
+	if err := s.eng.Put(edgeFwdKeyPrefix+req.FromID+":"+id, []byte(id)); err != nil {
+		return "", fmt.Errorf("store put edge fwd: %w", err)
+	}
+	// Reverse adjacency index: et:<toID>:<edgeID>
+	if err := s.eng.Put(edgeRevKeyPrefix+req.ToID+":"+id, []byte(id)); err != nil {
+		return "", fmt.Errorf("store put edge rev: %w", err)
+	}
+	s.graph.Add(id, req.FromID, req.ToID, req.Label, req.Source, req.Weight)
+	return id, nil
+}
+
+// GetEdge retrieves a single edge by ID.
+func (s *Store) GetEdge(ctx context.Context, id string) (storage.Edge, error) {
+	_ = ctx
+	raw, ok := s.eng.Get(edgeKeyPrefix + id)
+	if !ok {
+		return storage.Edge{}, fmt.Errorf("store get edge: not found")
+	}
+	return storage.DecodeEdge(raw)
+}
+
+// DeleteEdge removes an edge and its adjacency index entries.
+func (s *Store) DeleteEdge(ctx context.Context, id string) error {
+	_ = ctx
+	raw, ok := s.eng.Get(edgeKeyPrefix + id)
+	if !ok {
+		return fmt.Errorf("store delete edge: not found")
+	}
+	e, err := storage.DecodeEdge(raw)
+	if err != nil {
+		return fmt.Errorf("store delete edge decode: %w", err)
+	}
+	if err := s.eng.Delete(edgeKeyPrefix + id); err != nil {
+		return fmt.Errorf("store delete edge: %w", err)
+	}
+	_ = s.eng.Delete(edgeFwdKeyPrefix + e.FromID + ":" + id)
+	_ = s.eng.Delete(edgeRevKeyPrefix + e.ToID + ":" + id)
+	s.graph.Remove(id)
+	return nil
+}
+
+// ListEdgesFrom returns all edges whose FromID equals nodeID.
+func (s *Store) ListEdgesFrom(ctx context.Context, nodeID string) ([]storage.Edge, error) {
+	_ = ctx
+	prefix := edgeFwdKeyPrefix + nodeID + ":"
+	keys := s.eng.PrefixKeys(prefix)
+	return s.loadEdgesByKeys(keys)
+}
+
+// ListEdgesTo returns all edges whose ToID equals nodeID.
+func (s *Store) ListEdgesTo(ctx context.Context, nodeID string) ([]storage.Edge, error) {
+	_ = ctx
+	prefix := edgeRevKeyPrefix + nodeID + ":"
+	keys := s.eng.PrefixKeys(prefix)
+	return s.loadEdgesByKeys(keys)
+}
+
+func (s *Store) loadEdgesByKeys(adjKeys []string) ([]storage.Edge, error) {
+	var out []storage.Edge
+	for _, k := range adjKeys {
+		// Value is the edge ID.
+		idBytes, ok := s.eng.Get(k)
+		if !ok {
+			continue
+		}
+		edgeID := string(idBytes)
+		raw, ok := s.eng.Get(edgeKeyPrefix + edgeID)
+		if !ok {
+			continue
+		}
+		e, err := storage.DecodeEdge(raw)
+		if err != nil {
+			continue
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// GraphOutgoing returns the GraphIndex outgoing EdgeRefs for fast in-memory traversal.
+func (s *Store) GraphOutgoing(nodeID string) []index.EdgeRef {
+	return s.graph.Outgoing(nodeID)
+}
+
+// GraphIncoming returns the GraphIndex incoming EdgeRefs.
+func (s *Store) GraphIncoming(nodeID string) []index.EdgeRef {
+	return s.graph.Incoming(nodeID)
+}
+
+// GraphNeighborhood returns nodes reachable from nodeID via BFS (both directions)
+// up to maxDepth, scored by graph proximity. Used by REST and MCP handlers.
+func (s *Store) GraphNeighborhood(nodeID string, maxDepth int) []index.RankedID {
+	return s.graph.Neighborhood(nodeID, maxDepth)
+}
+
+// SubtreeEdges returns edges in a directed BFS from rootID following outgoing edges.
+func (s *Store) SubtreeEdges(rootID string, maxDepth int) []index.EdgeRef {
+	return s.graph.SubtreeEdges(rootID, maxDepth)
+}
+
+// SuggestedLink is a candidate relationship discovered via vector similarity.
+type SuggestedLink struct {
+	TargetID   string  `json:"target_id"`
+	Similarity float64 `json:"similarity"`
+}
+
+// SuggestLinks finds the nearest vector neighbors of nodeID that are not already
+// linked via an explicit edge, above the given similarity threshold.
+func (s *Store) SuggestLinks(ctx context.Context, nodeID string, threshold float64, topK int) ([]SuggestedLink, error) {
+	raw, ok := s.eng.Get(docKeyPrefix + nodeID)
+	if !ok {
+		return nil, fmt.Errorf("store suggest links: node not found")
+	}
+	if s.embed == nil {
+		return nil, nil
+	}
+	ent, err := storage.Decode(raw)
+	if err != nil {
+		return nil, fmt.Errorf("store suggest links decode: %w", err)
+	}
+	if len(ent.Embedding) == 0 {
+		return nil, nil
+	}
+	if topK <= 0 {
+		topK = 10
+	}
+	vecHits := s.vec.Search(ent.Embedding, topK*3)
+	existing := s.graph.AllNeighborIDs(nodeID)
+	var out []SuggestedLink
+	for _, h := range vecHits {
+		// Strip chunk suffix if present.
+		docID := h.ID
+		if i := strings.Index(h.ID, "#"); i >= 0 {
+			docID = h.ID[:i]
+		}
+		if docID == nodeID {
+			continue
+		}
+		if _, linked := existing[docID]; linked {
+			continue
+		}
+		if h.Score < threshold {
+			continue
+		}
+		out = append(out, SuggestedLink{TargetID: docID, Similarity: h.Score})
+		if len(out) >= topK {
+			break
+		}
+	}
+	return out, nil
+}

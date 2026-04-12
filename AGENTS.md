@@ -24,6 +24,7 @@ LaightDB/
       vector.go                  # coder/hnsw wrapper (ANN search)
       metadata.go                # Inverted index on metadata key-value pairs
       hybrid.go                  # Reciprocal Rank Fusion combiner
+      graph.go                   # In-memory bidirectional adjacency index (mindmap edges)
     context/
       tokens.go                  # Token count estimator (heuristic)
       store.go                   # Context CRUD + business logic
@@ -44,6 +45,7 @@ LaightDB/
       ratelimit.go               # Token bucket rate limiter (per-user/per-IP)
     server/
       http.go                    # REST API (net/http, no framework)
+      graph_handlers.go          # Edge + graph REST endpoints
       auth_handlers.go           # Auth, user, token management endpoints
       middleware.go              # Logging, recovery
     mcp/
@@ -109,21 +111,46 @@ Everything else (storage engine, BM25, chunking, binary codec) is built from scr
 
 ```go
 type ContextEntry struct {
-    ID          string
-    Collection  string
-    Content     string
-    ContentType string            // "code", "conversation", "doc", "kv"
-    Summary     string
-    Chunks      []Chunk
-    Metadata    map[string]string
-    Embedding   []float32         // 1024-dim from gobed
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
-    TokenCount  int
+    ID                string
+    Collection        string
+    Content           string
+    ContentType       string            // "code", "conversation", "doc", "kv"
+    Summary           string
+    Chunks            []Chunk
+    Metadata          map[string]string
+    Embedding         []float32         // 1024-dim from gobed
+    CreatedAt         time.Time
+    UpdatedAt         time.Time
+    TokenCount        int
+    CompactContent    string
+    CompactTokenCount int
+}
+
+// Edge connects two ContextEntry nodes (mindmap relationship).
+type Edge struct {
+    ID        string
+    FromID    string
+    ToID      string
+    Label     string            // "child", "related_to", "depends_on", "auto_similar"
+    Weight    float64           // user importance or cosine similarity (auto edges)
+    Source    string            // "user" or "auto"
+    Metadata  map[string]string
+    CreatedAt time.Time
 }
 ```
 
-Serialized via custom binary codec (`internal/storage/codec.go`), not JSON.
+Both serialized via custom binary codecs (`internal/storage/codec.go`, `internal/storage/edge_codec.go`), not JSON.
+
+### LSM Key Scheme
+
+| Prefix | Purpose |
+|---|---|
+| `d:<id>` | ContextEntry document |
+| `e:<edgeID>` | Canonical Edge record |
+| `ef:<fromID>:<edgeID>` | Forward adjacency index (outgoing edges) |
+| `et:<toID>:<edgeID>` | Reverse adjacency index (incoming edges) |
+
+The `ef:` and `et:` prefix scans give O(degree) adjacency lookup without full-table scans.
 
 ## API Endpoints
 
@@ -135,6 +162,18 @@ Serialized via custom binary codec (`internal/storage/codec.go`), not JSON.
 - `GET    /v1/collections`           -- List collections
 - `POST   /v1/collections/{name}/compact` -- Trigger storage compaction
 - `GET    /v1/health`                -- Health check
+
+### Graph / Edge Endpoints
+
+- `POST   /v1/edges`                         -- Create edge (from_id, to_id, label, weight, source, metadata)
+- `GET    /v1/edges?from=X`                  -- List outgoing edges from node X
+- `GET    /v1/edges?to=X`                    -- List incoming edges to node X
+- `GET    /v1/edges/{id}`                    -- Get edge by ID
+- `DELETE /v1/edges/{id}`                    -- Delete edge
+- `GET    /v1/graph/{id}/neighbors?depth=1`  -- BFS neighbors (both directions)
+- `GET    /v1/graph/{id}/subtree?depth=3`    -- Directed BFS subtree (outgoing only)
+- `POST   /v1/graph/search`                  -- 3-signal search (BM25 + vector + graph proximity)
+- `GET    /v1/graph/{id}/suggest-links`      -- Vector-discovered link suggestions (?threshold=0.7&top_k=10)
 
 ### Auth & User Management
 
@@ -170,7 +209,16 @@ Auth data persisted as JSON in `{data_dir}/auth/` (users.json, tokens.json, sess
 - `get_context` -- Retrieve by ID with detail level
 - `delete_context` -- Remove context
 - `list_collections` -- List collections
-- `get_stats` -- Database stats
+- `get_stats` -- Database stats (includes edge count)
+
+### Graph / Mindmap MCP Tools
+
+- `link_context` -- Create a directed edge between two entries (from_id, to_id, label, weight, source)
+- `unlink_context` -- Remove an edge by edge_id
+- `get_neighbors` -- Get nodes connected to a given node via BFS (id, max_depth)
+- `get_subtree` -- Return a mindmap subtree as structured JSON (id, max_depth)
+- `graph_search` -- 3-signal search: BM25 + vector + graph proximity (query, focus_node_id, max_depth)
+- `suggest_links` -- Auto-discover missing relationships via vector similarity (id, threshold, top_k)
 
 ## Build & Test
 

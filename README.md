@@ -207,10 +207,10 @@ Same capabilities as MCP, for scripts and integrations:
 | `POST` | `/v1/contexts` | Create context |
 | `GET` | `/v1/contexts` | List entries (`?collection=`, `?limit=`) |
 | `GET` | `/v1/contexts/{id}` | Get by ID (`?detail=`) |
-| `POST` | `/v1/search` | Hybrid search |
+| `POST` | `/v1/search` | Hybrid search (BM25 + vector) |
 | `DELETE` | `/v1/contexts/{id}` | Delete |
 | `GET` | `/v1/collections` | List collections |
-| `GET` | `/v1/stats` | Database stats (entries, collections, vector nodes) |
+| `GET` | `/v1/stats` | Database stats (entries, collections, vector nodes, edges) |
 | `POST` | `/v1/collections/{name}/compact` | Request compaction |
 | `GET` | `/v1/health` | Health check |
 | `POST` | `/v1/auth/login` | Login (returns session cookie) |
@@ -225,6 +225,20 @@ Same capabilities as MCP, for scripts and integrations:
 | `POST` | `/v1/tokens` | Create API token |
 | `GET` | `/v1/tokens` | List tokens |
 | `DELETE` | `/v1/tokens/{id}` | Revoke token |
+
+### Graph / Mindmap API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/edges` | Create edge (`from_id`, `to_id`, `label`, `weight`, `source`) |
+| `GET` | `/v1/edges?from=X` | Outgoing edges from node X |
+| `GET` | `/v1/edges?to=X` | Incoming edges to node X |
+| `GET` | `/v1/edges/{id}` | Get edge by ID |
+| `DELETE` | `/v1/edges/{id}` | Delete edge |
+| `GET` | `/v1/graph/{id}/neighbors?depth=1` | BFS neighbors (both directions) |
+| `GET` | `/v1/graph/{id}/subtree?depth=3` | Directed BFS subtree (outgoing only) |
+| `POST` | `/v1/graph/search` | 3-signal search: BM25 + vector + graph proximity |
+| `GET` | `/v1/graph/{id}/suggest-links` | Vector-discovered link suggestions (`?threshold=0.7&top_k=10`) |
 
 Example (once the server is running):
 
