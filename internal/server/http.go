@@ -45,6 +45,10 @@ func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPSer
 	m.HandleFunc("GET /v1/graph/{id}/subtree", s.handleGraphSubtree)
 	m.HandleFunc("POST /v1/graph/search", s.handleGraphSearch)
 	m.HandleFunc("GET /v1/graph/{id}/suggest-links", s.handleGraphSuggestLinks)
+	m.HandleFunc("GET /v1/graph/overview", s.handleGraphOverview)
+
+	// Storage diagnostics
+	m.HandleFunc("GET /v1/storage/diagnostics", s.handleStorageDiagnostics)
 
 	// Auth routes
 	m.HandleFunc("POST /v1/auth/login", s.handleLogin)

@@ -67,4 +67,6 @@ Orchestrates the full ingest pipeline:
 5. Estimate token count
 6. Queue async summarization (pluggable LLM)
 7. Write to storage engine
-8. Update all indexes (fulltext, vector, metadata)
+8. Update all indexes (fulltext, vector, metadata, **graph** when edges change)
+
+**Edges:** `PutEdge` / `GetEdge` / `DeleteEdge` write `e:` / `ef:` / `et:` keys and update `GraphIndex`. **Search** can fuse BM25 + vector + **graph neighborhood** ranks (RRF) when `FocusNodeID` is set. **GraphOverview** bulk-loads nodes + edges for `GET /v1/graph/overview` (3D UI).

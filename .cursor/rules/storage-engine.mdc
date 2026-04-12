@@ -52,14 +52,8 @@ Read strategy: seek to footer -> read index offset -> load index -> binary searc
 - Tombstone processing: discard deleted keys during merge
 - Run in background goroutine, never block writes
 
-## Key Interfaces
+## Engine surface (`engine.go`)
 
-```go
-type Engine interface {
-    Put(ctx context.Context, key, value []byte) error
-    Get(ctx context.Context, key []byte) ([]byte, error)
-    Delete(ctx context.Context, key []byte) error
-    Scan(ctx context.Context, prefix []byte) Iterator
-    Close() error
-}
-```
+LaightDB’s `storage.Engine` uses **string keys** and `[]byte` values (`Put`/`Get`/`Delete`, `SSTPaths`, `MemLen`, `Flush`, compaction). It is **not** the generic interface sketched below; treat the real struct as the contract.
+
+**Read-only sizing for observability:** `Diagnostics() (EngineDiagnostics, error)` — `os.Stat` on `wal.log` and each SST path from `SSTPaths()`, plus `MemLen()` for the memtable entry count. JSON shape matches `GET /v1/storage/diagnostics`.

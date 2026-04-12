@@ -14,7 +14,8 @@ LaightDB/
       skiplist.go                # Skip list data structure
       bloom.go                   # Bloom filter
       codec.go                   # Binary encoder/decoder for ContextEntry
-      engine.go                  # Orchestrator: WAL + MemTable + SSTables
+      edge_codec.go              # Binary encoder/decoder for Edge
+      engine.go                  # Orchestrator: WAL + MemTable + SSTables; Diagnostics() for UI
       wal.go                     # Write-ahead log (append-only, crash recovery)
       memtable.go                # In-memory sorted map (skip list)
       sstable.go                 # Immutable on-disk sorted files + bloom filter
@@ -45,7 +46,8 @@ LaightDB/
       ratelimit.go               # Token bucket rate limiter (per-user/per-IP)
     server/
       http.go                    # REST API (net/http, no framework)
-      graph_handlers.go          # Edge + graph REST endpoints
+      graph_handlers.go          # Edge + graph REST endpoints (incl. overview)
+      storage_handlers.go        # Storage diagnostics (WAL / memtable / SST sizes)
       auth_handlers.go           # Auth, user, token management endpoints
       middleware.go              # Logging, recovery
     mcp/
@@ -67,7 +69,10 @@ LaightDB/
   go.sum
   Makefile
   README.md
+  ui/                          # Vite + React web UI (optional; separate npm deps)
 ```
+
+The **`ui/`** directory is a **Vite + React** front-end (separate `package.json`). Run it in dev against the API (see `README.md`); frontend dependencies are **not** governed by the Go module allowlist—approve additions explicitly.
 
 ## Dependencies
 
@@ -160,6 +165,7 @@ The `ef:` and `et:` prefix scans give O(degree) adjacency lookup without full-ta
 - `POST   /v1/search`               -- Hybrid search (query, filters, top_k, detail)
 - `DELETE /v1/contexts/{id}`         -- Delete
 - `GET    /v1/collections`           -- List collections
+- `GET    /v1/stats`                 -- Database stats (entries, collections, vector nodes, edges)
 - `POST   /v1/collections/{name}/compact` -- Trigger storage compaction
 - `GET    /v1/health`                -- Health check
 
@@ -174,6 +180,15 @@ The `ef:` and `et:` prefix scans give O(degree) adjacency lookup without full-ta
 - `GET    /v1/graph/{id}/subtree?depth=3`    -- Directed BFS subtree (outgoing only)
 - `POST   /v1/graph/search`                  -- 3-signal search (BM25 + vector + graph proximity)
 - `GET    /v1/graph/{id}/suggest-links`      -- Vector-discovered link suggestions (?threshold=0.7&top_k=10)
+- `GET    /v1/graph/overview`               -- Bulk nodes + edges for visualization (?collection=, ?limit=)
+
+### Storage diagnostics
+
+- `GET    /v1/storage/diagnostics`            -- WAL bytes, memtable entry count, SST paths/sizes/seq
+
+### Web UI (Vite)
+
+- Routes such as **`/explorer`** (3D Explorer: context graph + engine layout) are implemented in `ui/`; they call the REST API above. The Go binary exposes `/v1/*` and `/mcp` only unless you add a static file handler or run the Vite dev server separately.
 
 ### Auth & User Management
 

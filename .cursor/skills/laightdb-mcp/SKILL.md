@@ -29,7 +29,13 @@ When the LaightDB instance has users, the HTTP API and `/mcp` use the same auth 
 | `get_context` | Fetch one entry by `id`. |
 | `delete_context` | Remove by `id`; returns `{"ok":true}`. |
 | `list_collections` | Lists collection names. |
-| `get_stats` | Database statistics. |
+| `get_stats` | Database statistics (includes edge count when graph data exists). |
+| `link_context` | Create a directed edge between two context IDs. |
+| `unlink_context` | Remove an edge by `edge_id`. |
+| `get_neighbors` | BFS neighbors from a node (`id`, `max_depth`). |
+| `get_subtree` | Directed subtree JSON (`id`, `max_depth`). |
+| `graph_search` | Hybrid search with graph proximity (`focus_node_id`, `max_depth`, …). |
+| `suggest_links` | Vector-suggested links (`id`, `threshold`, `top_k`). |
 
 ### `store_context`
 

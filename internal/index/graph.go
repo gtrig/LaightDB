@@ -100,6 +100,44 @@ func (g *GraphIndex) Incoming(nodeID string) []EdgeRef {
 	return out
 }
 
+// AllEdgeRecord is a minimal edge summary returned by AllEdges.
+type AllEdgeRecord struct {
+	EdgeID string  `json:"edge_id"`
+	FromID string  `json:"from_id"`
+	ToID   string  `json:"to_id"`
+	Label  string  `json:"label"`
+	Weight float64 `json:"weight"`
+	Source string  `json:"source"`
+}
+
+// AllEdges returns every edge in the index sorted deterministically by edge ID.
+func (g *GraphIndex) AllEdges() []AllEdgeRecord {
+	out := make([]AllEdgeRecord, 0, len(g.meta))
+	for edgeID, m := range g.meta {
+		// Retrieve label/weight/source from forward adjacency.
+		var label, source string
+		var weight float64
+		for _, ref := range g.forward[m.fromID] {
+			if ref.EdgeID == edgeID {
+				label = ref.Label
+				weight = ref.Weight
+				source = ref.Source
+				break
+			}
+		}
+		out = append(out, AllEdgeRecord{
+			EdgeID: edgeID,
+			FromID: m.fromID,
+			ToID:   m.toID,
+			Label:  label,
+			Weight: weight,
+			Source: source,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].EdgeID < out[j].EdgeID })
+	return out
+}
+
 // AllNeighborIDs returns the set of all node IDs directly connected to nodeID
 // via any edge (both directions, depth 1). Used for suggest-links filtering.
 func (g *GraphIndex) AllNeighborIDs(nodeID string) map[string]struct{} {

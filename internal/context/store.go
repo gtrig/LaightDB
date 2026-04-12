@@ -563,6 +563,12 @@ func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
 // Engine exposes the underlying storage engine for admin (compaction).
 func (s *Store) Engine() *storage.Engine { return s.eng }
 
+// StorageDiagnostics returns WAL/memtable/SSTable size information.
+func (s *Store) StorageDiagnostics(ctx context.Context) (storage.EngineDiagnostics, error) {
+	_ = ctx
+	return s.eng.Diagnostics()
+}
+
 // -------------------------------------------------------------------
 // Edge / Graph API
 // -------------------------------------------------------------------
@@ -757,4 +763,100 @@ func (s *Store) SuggestLinks(ctx context.Context, nodeID string, threshold float
 		}
 	}
 	return out, nil
+}
+
+// -------------------------------------------------------------------
+// Graph Overview (bulk read for 3D UI)
+// -------------------------------------------------------------------
+
+// OverviewNode is a minimal node description for the graph overview.
+type OverviewNode struct {
+	ID         string `json:"id"`
+	Collection string `json:"collection"`
+	Label      string `json:"label"`
+}
+
+// GraphOverviewResponse is returned by GET /v1/graph/overview.
+type GraphOverviewResponse struct {
+	Nodes     []OverviewNode        `json:"nodes"`
+	Edges     []index.AllEdgeRecord `json:"edges"`
+	Truncated bool                  `json:"truncated"`
+}
+
+// GraphOverview returns all edges and a deduplicated set of node summaries.
+// limit caps the total node count (default 500, max 2000).
+func (s *Store) GraphOverview(ctx context.Context, collection string, limit int) (GraphOverviewResponse, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+
+	edges := s.graph.AllEdges()
+
+	nodeSet := make(map[string]struct{})
+	for _, e := range edges {
+		nodeSet[e.FromID] = struct{}{}
+		nodeSet[e.ToID] = struct{}{}
+	}
+
+	type docMeta struct {
+		collection string
+		label      string
+	}
+	keys := s.eng.PrefixKeys(docKeyPrefix)
+	docs := make(map[string]docMeta, len(keys))
+	for _, k := range keys {
+		raw, ok := s.eng.Get(k)
+		if !ok {
+			continue
+		}
+		ent, err := storage.Decode(raw)
+		if err != nil {
+			continue
+		}
+		if collection != "" && ent.Collection != collection {
+			if _, inEdge := nodeSet[ent.ID]; !inEdge {
+				continue
+			}
+		}
+		label := ent.Summary
+		if label == "" {
+			label = ent.Content
+		}
+		if len(label) > 80 {
+			label = label[:80]
+		}
+		docs[ent.ID] = docMeta{collection: ent.Collection, label: label}
+		nodeSet[ent.ID] = struct{}{}
+	}
+
+	nodeIDs := make([]string, 0, len(nodeSet))
+	for id := range nodeSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	sort.Strings(nodeIDs)
+
+	truncated := false
+	if len(nodeIDs) > limit {
+		nodeIDs = nodeIDs[:limit]
+		truncated = true
+	}
+
+	nodes := make([]OverviewNode, 0, len(nodeIDs))
+	for _, id := range nodeIDs {
+		n := OverviewNode{ID: id}
+		if m, ok := docs[id]; ok {
+			n.Collection = m.collection
+			n.Label = m.label
+		}
+		nodes = append(nodes, n)
+	}
+
+	return GraphOverviewResponse{
+		Nodes:     nodes,
+		Edges:     edges,
+		Truncated: truncated,
+	}, nil
 }

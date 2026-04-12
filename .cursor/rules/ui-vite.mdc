@@ -1,0 +1,12 @@
+---
+description: Vite + React web UI under ui/ (REST client, 3D Explorer)
+globs: "ui/**/*.{tsx,ts,css,html}"
+alwaysApply: false
+---
+
+# Web UI (`ui/`)
+
+- **Stack:** Vite, React, TypeScript. Dev server defaults to port **3000** and **proxies `/v1`** to `http://localhost:8080` (`ui/vite.config.ts`). Run the Go server separately for API + auth cookies.
+- **REST:** Use relative URLs (`/v1/...`) so the Vite proxy works in development.
+- **3D Explorer:** `ui/src/components/StorageExplorer3D.tsx`, route **`/explorer`** in `App.tsx`. Uses `three`, `@react-three/fiber`, `@react-three/drei`; graph data from `GET /v1/graph/overview`, storage viz from `GET /v1/storage/diagnostics`.
+- **Dependencies:** npm packages live only under `ui/package.json`. They are **not** covered by the Go `AGENTS.md` allowlist—get explicit approval before adding libraries.

@@ -9,6 +9,8 @@ import type {
   AuthStatus,
   UserRole,
   StressReport,
+  StorageDiagnostics,
+  GraphOverview,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -114,6 +116,25 @@ export async function runStress(body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+// --- Storage diagnostics ---
+
+export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
+  return request("/v1/storage/diagnostics");
+}
+
+// --- Graph overview ---
+
+export async function getGraphOverview(options?: {
+  collection?: string;
+  limit?: number;
+}): Promise<GraphOverview> {
+  const q = new URLSearchParams();
+  if (options?.collection) q.set("collection", options.collection);
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  return request(`/v1/graph/overview${qs ? `?${qs}` : ""}`);
 }
 
 // --- Auth ---

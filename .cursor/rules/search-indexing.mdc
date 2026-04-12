@@ -79,3 +79,12 @@ RRF_score(d) = sum_r[ 1 / (k + rank_r(d)) ]  where k=60
 ## Metadata Index (metadata.go)
 
 Inverted index on `key:value` pairs -> set of doc IDs. Used for pre-filtering or post-filtering hybrid results.
+
+## Graph Index (`graph.go`)
+
+Bidirectional adjacency over edges (`e:`, `ef:`, `et:` LSM keys). Used for:
+
+- `Neighborhood(startID, maxDepth)` → ranked node IDs (depth-based score) for **graph-boosted search**
+- `AllEdges()` → deterministic bulk list for `GET /v1/graph/overview`
+
+When `SearchRequest` includes a **focus node** (`FocusNodeID`), hybrid search merges **three** ranked lists via RRF: BM25, vector ANN, and graph proximity — same `k` as other RRF terms in `hybrid.go` / `store.Search`.

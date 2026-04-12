@@ -2,7 +2,7 @@
 
 Standalone Go database for **AI context**: store text, search with hybrid **full-text + semantic** retrieval, and return **tiered detail** (metadata / summary / full) to save context window. Exposes the same operations over **REST** and **MCP** (Model Context Protocol).
 
-**Docs:** [AGENTS.md](AGENTS.md) (conventions) · [Implementation plan](.cursor/plans/laightdb_context_database_522a216f.plan.md) (TDD, coverage, phases)
+**Docs:** [AGENTS.md](AGENTS.md) (conventions) · [Core implementation plan](.cursor/plans/laightdb_context_database_522a216f.plan.md) (TDD, coverage, phases) · [3D Explorer + diagnostics plan](.cursor/plans/3d_storage_ui_dual_views_0121f877.plan.md) (completed)
 
 ---
 
@@ -39,6 +39,16 @@ go build -o laightdb ./cmd/laightdb
 ```
 
 (After the implementation lands — see the [implementation plan](.cursor/plans/laightdb_context_database_522a216f.plan.md).)
+
+### Web UI (`ui/`)
+
+Vite + React. Dev server proxies `/v1` to the API (default `http://localhost:8080` — see `ui/vite.config.ts`). Start the LaightDB HTTP server, then:
+
+```bash
+cd ui && npm install && npm run dev
+```
+
+Open the app (port **3000** by default). The **3D Explorer** lives at `/explorer` and uses `three` + React Three Fiber (see [3D Explorer UI](#3d-explorer-ui) under REST).
 
 ---
 
@@ -96,6 +106,17 @@ The process speaks MCP over **stdin/stdout** (newline-delimited JSON-RPC). Your 
 | `delete_context` | Delete by `id` |
 | `list_collections` | List collection names |
 | `get_stats` | Database statistics |
+
+### Graph / mindmap MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| `link_context` | Create edge (`from_id`, `to_id`, `label`, `weight`, `source`) |
+| `unlink_context` | Remove edge by `edge_id` |
+| `get_neighbors` | BFS neighbors (`id`, `max_depth`) |
+| `get_subtree` | Directed subtree (`id`, `max_depth`) |
+| `graph_search` | 3-signal search with `focus_node_id` + `max_depth` |
+| `suggest_links` | Vector link suggestions (`threshold`, `top_k`) |
 
 **Typical assistant workflow**
 
@@ -239,6 +260,22 @@ Same capabilities as MCP, for scripts and integrations:
 | `GET` | `/v1/graph/{id}/subtree?depth=3` | Directed BFS subtree (outgoing only) |
 | `POST` | `/v1/graph/search` | 3-signal search: BM25 + vector + graph proximity |
 | `GET` | `/v1/graph/{id}/suggest-links` | Vector-discovered link suggestions (`?threshold=0.7&top_k=10`) |
+| `GET` | `/v1/graph/overview` | Bulk graph snapshot for 3D UI (`?collection=`, `?limit=500`) |
+
+### Storage diagnostics API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/v1/storage/diagnostics` | WAL size, memtable entry count, per-SSTable sizes |
+
+### 3D Explorer UI
+
+The web UI ships a **3D Explorer** page at `/explorer` with two tabs:
+
+- **Context Graph** — interactive force-directed 3D graph of all context entries and their edges. Spheres represent entries (colour-coded by collection); lines represent edges. Click any node to navigate to its detail page. Powered by [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) and a built-in force-layout engine. Capped at 500 nodes by default.
+- **Engine Layout** — schematic 3D view of the storage layer: WAL, MemTable, and SSTable files rendered as blocks whose height is proportional to `log(bytes)`. Hover any block for exact sizes.
+
+UI dependencies added for the 3D view: `three`, `@react-three/fiber`, `@react-three/drei`, `d3-force-3d`.
 
 Example (once the server is running):
 

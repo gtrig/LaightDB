@@ -219,6 +219,21 @@ func (s *HTTPServer) handleGraphSuggestLinks(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(map[string]any{"suggestions": suggestions})
 }
 
+// handleGraphOverview returns a bulk snapshot of all nodes and edges for the 3D UI.
+//
+// GET /v1/graph/overview?collection=&limit=500
+func (s *HTTPServer) handleGraphOverview(w http.ResponseWriter, r *http.Request) {
+	collection := r.URL.Query().Get("collection")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	overview, err := s.Store.GraphOverview(r.Context(), collection, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(overview)
+}
+
 // edgeRefsToJSON is a helper used by the subtree handler.
 func edgeRefsToJSON(refs []index.EdgeRef) []map[string]any {
 	out := make([]map[string]any, 0, len(refs))

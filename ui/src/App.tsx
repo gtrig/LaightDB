@@ -12,6 +12,7 @@ import StressPage from "./components/StressPage";
 import LoginPage from "./components/LoginPage";
 import UsersPage from "./components/UsersPage";
 import TokensPage from "./components/TokensPage";
+import StorageExplorer3D from "./components/StorageExplorer3D";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, authRequired, loading } = useAuth();
@@ -93,6 +94,7 @@ export default function App() {
             </RequireAdminOrBootstrap>
           }
         />
+        <Route path="explorer" element={<StorageExplorer3D />} />
         <Route path="contexts/:id" element={<ContextDetail />} />
         <Route
           path="settings/users"

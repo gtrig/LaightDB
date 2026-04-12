@@ -170,6 +170,13 @@ export default function Layout() {
             <NavIcon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             System
           </NavLink>
+          <NavLink
+            to="/explorer"
+            style={({ isActive }) => ({ ...baseLinkStyle, ...(isActive ? activeLinkExtra : {}) })}
+          >
+            <NavIcon d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z" />
+            3D Explorer
+          </NavLink>
           {showStressNav && (
             <NavLink
               to="/stress"

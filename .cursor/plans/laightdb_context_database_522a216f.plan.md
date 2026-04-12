@@ -540,3 +540,8 @@ LaightDB/
 ## Implementation Order
 
 The phases build on each other. Critical path: Storage Engine -> Indexing -> Context Processing -> API -> MCP -> Binary -> Docker. Within each phase, follow the numbered file order, but **tests lead implementation** (TDD). Do not advance a component without meaningful `_test.go` coverage and passing **`go test -race ./...`**. This document is the canonical implementation plan for the repository (also stored under `.cursor/plans/`).
+
+## Follow-up work (completed)
+
+- **Graph + vector mindmap layer:** `Edge` records, `GraphIndex`, edge LSM keys, graph-boosted hybrid search, REST + MCP graph tools — implemented in-tree (see `AGENTS.md`).
+- **3D Explorer UI + diagnostics APIs:** bulk `GET /v1/graph/overview`, `GET /v1/storage/diagnostics`, and the `/explorer` React Three Fiber page — see [.cursor/plans/3d_storage_ui_dual_views_0121f877.plan.md](3d_storage_ui_dual_views_0121f877.plan.md).

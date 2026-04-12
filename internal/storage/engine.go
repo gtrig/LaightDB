@@ -216,3 +216,58 @@ func (e *Engine) MemLen() int {
 	defer e.mu.RUnlock()
 	return e.mem.Len()
 }
+
+// SSTFileInfo holds size metadata for a single SSTable file.
+type SSTFileInfo struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+	Seq   uint64 `json:"seq"`
+}
+
+// EngineDiagnostics contains a snapshot of storage layer sizes.
+type EngineDiagnostics struct {
+	DataDir    string        `json:"data_dir"`
+	WALBytes   int64         `json:"wal_bytes"`
+	MemEntries int           `json:"mem_entries"`
+	SSTables   []SSTFileInfo `json:"sstables"`
+}
+
+// Diagnostics gathers WAL size, memtable count, and per-SSTable sizes.
+// It reads the filesystem while holding only the read lock.
+func (e *Engine) Diagnostics() (EngineDiagnostics, error) {
+	e.mu.RLock()
+	paths := make([]string, len(e.sstPaths))
+	copy(paths, e.sstPaths)
+	memEntries := e.mem.Len()
+	dir := e.dir
+	e.mu.RUnlock()
+
+	diag := EngineDiagnostics{
+		DataDir:    dir,
+		MemEntries: memEntries,
+	}
+
+	// WAL size.
+	walPath := filepath.Join(dir, "wal.log")
+	if fi, err := os.Stat(walPath); err == nil {
+		diag.WALBytes = fi.Size()
+	}
+
+	// SSTable sizes.
+	for _, p := range paths {
+		info := SSTFileInfo{Path: p}
+		if fi, err := os.Stat(p); err == nil {
+			info.Bytes = fi.Size()
+		}
+		// Parse sequence number from filename.
+		base := strings.TrimSuffix(filepath.Base(p), ".sst")
+		if n, err := strconv.ParseUint(base, 10, 64); err == nil {
+			info.Seq = n
+		}
+		diag.SSTables = append(diag.SSTables, info)
+	}
+	if diag.SSTables == nil {
+		diag.SSTables = []SSTFileInfo{}
+	}
+	return diag, nil
+}

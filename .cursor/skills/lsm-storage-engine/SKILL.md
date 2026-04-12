@@ -160,6 +160,10 @@ func (e *Engine) runCompaction(ctx context.Context) {
 
 Use `container/heap` for the K-way merge priority queue.
 
+## Observability (`Engine.Diagnostics`)
+
+`Diagnostics()` returns `EngineDiagnostics`: absolute `data_dir`, `wal_bytes` (from `os.Stat` on `wal.log`), `mem_entries` (`MemLen()`), and `sstables` with `path`, `bytes`, `seq` per file. Used by `GET /v1/storage/diagnostics` for the web UI’s engine layout view — no extra dependencies.
+
 ## Additional Reference
 
 - For detailed LSM-tree theory, see [reference.md](reference.md)

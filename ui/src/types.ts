@@ -31,6 +31,45 @@ export interface StatsResponse {
   entries: number;
   collections: number;
   vector_nodes: number;
+  edges?: number;
+}
+
+// --- Storage diagnostics ---
+
+export interface SSTFileInfo {
+  path: string;
+  bytes: number;
+  seq: number;
+}
+
+export interface StorageDiagnostics {
+  data_dir: string;
+  wal_bytes: number;
+  mem_entries: number;
+  sstables: SSTFileInfo[];
+}
+
+// --- Graph overview ---
+
+export interface OverviewNode {
+  id: string;
+  collection: string;
+  label: string;
+}
+
+export interface OverviewEdge {
+  edge_id: string;
+  from_id: string;
+  to_id: string;
+  label: string;
+  weight: number;
+  source: string;
+}
+
+export interface GraphOverview {
+  nodes: OverviewNode[];
+  edges: OverviewEdge[];
+  truncated: boolean;
 }
 
 /** Row from GET /v1/contexts */

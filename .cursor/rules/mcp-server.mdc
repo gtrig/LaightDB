@@ -69,6 +69,12 @@ Select via CLI flag: `--transport=stdio|http`
 | `delete_context` | Delete by ID | id |
 | `list_collections` | List collections | -- |
 | `get_stats` | Database statistics | -- |
+| `link_context` | Create directed edge | from_id, to_id, label, weight, source |
+| `unlink_context` | Delete edge | edge_id |
+| `get_neighbors` | BFS neighbors | id, max_depth |
+| `get_subtree` | Directed subtree | id, max_depth |
+| `graph_search` | BM25 + vector + graph RRF | query, focus_node_id, max_depth, … |
+| `suggest_links` | Vector link suggestions | id, threshold, top_k |
 
 ## Resources
 
