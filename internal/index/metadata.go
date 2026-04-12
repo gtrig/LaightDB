@@ -1,6 +1,7 @@
 package index
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -44,6 +45,90 @@ func (m *MetadataIndex) Remove(docID string) {
 			}
 		}
 	}
+}
+
+// EncodeSnapshot serializes the metadata index for persistence.
+func (m *MetadataIndex) EncodeSnapshot() []byte {
+	var buf []byte
+	// sort keys for deterministic output
+	keys := make([]string, 0, len(m.idx))
+	for k := range m.idx {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	buf = appendUvarint(buf, uint64(len(keys)))
+	for _, k := range keys {
+		buf = appendString(buf, k)
+		vm := m.idx[k]
+		vals := make([]string, 0, len(vm))
+		for v := range vm {
+			vals = append(vals, v)
+		}
+		sort.Strings(vals)
+		buf = appendUvarint(buf, uint64(len(vals)))
+		for _, v := range vals {
+			buf = appendString(buf, v)
+			set := vm[v]
+			docIDs := make([]string, 0, len(set))
+			for id := range set {
+				docIDs = append(docIDs, id)
+			}
+			sort.Strings(docIDs)
+			buf = appendUvarint(buf, uint64(len(docIDs)))
+			for _, id := range docIDs {
+				buf = appendString(buf, id)
+			}
+		}
+	}
+	return buf
+}
+
+// DecodeMetadataSnapshot restores from EncodeSnapshot.
+func DecodeMetadataSnapshot(data []byte) (*MetadataIndex, error) {
+	m := NewMetadataIndex()
+	p := 0
+	nk, np, err := readUvarint(data, p)
+	if err != nil {
+		return nil, fmt.Errorf("metadata snapshot keys: %w", err)
+	}
+	p = np
+	for i := uint64(0); i < nk; i++ {
+		k, np2, err := readString(data, p)
+		if err != nil {
+			return nil, fmt.Errorf("metadata snapshot key: %w", err)
+		}
+		p = np2
+		nv, np3, err := readUvarint(data, p)
+		if err != nil {
+			return nil, fmt.Errorf("metadata snapshot values count: %w", err)
+		}
+		p = np3
+		vm := make(map[string]map[string]struct{}, nv)
+		for j := uint64(0); j < nv; j++ {
+			v, np4, err := readString(data, p)
+			if err != nil {
+				return nil, fmt.Errorf("metadata snapshot value: %w", err)
+			}
+			p = np4
+			nd, np5, err := readUvarint(data, p)
+			if err != nil {
+				return nil, fmt.Errorf("metadata snapshot docIDs count: %w", err)
+			}
+			p = np5
+			set := make(map[string]struct{}, nd)
+			for l := uint64(0); l < nd; l++ {
+				id, np6, err := readString(data, p)
+				if err != nil {
+					return nil, fmt.Errorf("metadata snapshot docID: %w", err)
+				}
+				p = np6
+				set[id] = struct{}{}
+			}
+			vm[v] = set
+		}
+		m.idx[k] = vm
+	}
+	return m, nil
 }
 
 // Match returns doc IDs that satisfy all filters (AND).

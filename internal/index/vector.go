@@ -11,6 +11,12 @@ type VectorIndex struct {
 	sg *hnsw.SavedGraph[string]
 }
 
+// VectorItem is a single (id, vector) pair for batch operations.
+type VectorItem struct {
+	ID  string
+	Vec []float32
+}
+
 // OpenVectorIndex loads or creates an on-disk HNSW graph.
 func OpenVectorIndex(path string) (*VectorIndex, error) {
 	sg, err := hnsw.LoadSavedGraph[string](path)
@@ -20,9 +26,17 @@ func OpenVectorIndex(path string) (*VectorIndex, error) {
 	return &VectorIndex{sg: sg}, nil
 }
 
-// Upsert adds or replaces a vector for docID.
+// Upsert adds or replaces a vector for docID and flushes to disk immediately.
 func (v *VectorIndex) Upsert(docID string, vec []float32) error {
 	v.sg.Add(hnsw.MakeNode(docID, vec))
+	return v.sg.Save()
+}
+
+// UpsertBatch adds or replaces multiple vectors and flushes to disk once.
+func (v *VectorIndex) UpsertBatch(items []VectorItem) error {
+	for _, item := range items {
+		v.sg.Add(hnsw.MakeNode(item.ID, item.Vec))
+	}
 	return v.sg.Save()
 }
 

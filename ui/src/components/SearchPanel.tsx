@@ -77,8 +77,8 @@ export default function SearchPanel() {
       });
       const enriched = await Promise.all(
         results.map(async (r) => {
-          const entry = await getContext(r.ID, resultDetail).catch(() => undefined);
-          return { id: r.ID, score: r.Score, entry };
+          const entry = await getContext(r.id, resultDetail).catch(() => undefined);
+          return { id: r.id, score: r.score, entry };
         })
       );
       setHits(enriched);

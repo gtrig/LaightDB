@@ -18,8 +18,9 @@ export interface Chunk {
 }
 
 export interface SearchResult {
-  ID: string;
-  Score: number;
+  id: string;
+  score: number;
+  token_count: number;
 }
 
 export interface SearchHit extends SearchResult {
