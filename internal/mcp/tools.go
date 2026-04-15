@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	cursorintegration "github.com/gtrig/laightdb/integrations/cursor"
 	lctx "github.com/gtrig/laightdb/internal/context"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -69,6 +70,12 @@ type suggestLinksInput struct {
 	ID        string  `json:"id" jsonschema:"node id to find suggestions for"`
 	Threshold float64 `json:"threshold,omitempty" jsonschema:"minimum cosine similarity (default 0.7)"`
 	TopK      int     `json:"top_k,omitempty" jsonschema:"max suggestions (default 10)"`
+}
+
+type deployCursorInput struct {
+	ProjectRoot    string `json:"project_root" jsonschema:"path to the Cursor workspace root (directory that will contain .cursor)"`
+	OverwriteSkill bool   `json:"overwrite_skill,omitempty" jsonschema:"if true, replace existing laightdb-rolling-context SKILL.md"`
+	MergeHooks     *bool  `json:"merge_hooks,omitempty" jsonschema:"if false, do not change hooks.json (default true)"`
 }
 
 func registerTools(s *mcp.Server, store *lctx.Store) {
@@ -313,6 +320,43 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 			}, emptyOut{}, nil
 		}
 		b, _ := json.Marshal(map[string]any{"suggestions": suggestions})
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "deploy_cursor_integration",
+		Description: "Install the LaightDB Cursor skill plus hooks (sessionStart memory policy + beforeSubmitPrompt LaightDB search) under project_root/.cursor (optional hooks.json merge)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in deployCursorInput) (*mcp.CallToolResult, emptyOut, error) {
+		if in.ProjectRoot == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"project_root is required"}`}},
+				IsError: true,
+			}, emptyOut{}, nil
+		}
+		mergeHooks := true
+		if in.MergeHooks != nil {
+			mergeHooks = *in.MergeHooks
+		}
+		res, err := cursorintegration.Deploy(in.ProjectRoot, cursorintegration.DeployOptions{
+			OverwriteSkill: in.OverwriteSkill,
+			MergeHooks:     mergeHooks,
+		})
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+				IsError: true,
+			}, emptyOut{}, nil
+		}
+		const examplePrompt = "Deploy the LaightDB rolling-context Cursor integration into my project at <PROJECT_ROOT> (merge hooks unless I already customized hooks.json)."
+		b, _ := json.Marshal(map[string]any{
+			"ok":                   true,
+			"written":              res.Written,
+			"skipped":              res.Skipped,
+			"hooks_merged":         res.HooksMerged,
+			"hooks_merge_note":     res.HooksMergeNote,
+			"example_user_prompt":  examplePrompt,
+			"manual_assets_folder": "integrations/cursor in the LaightDB repository",
+		})
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 }

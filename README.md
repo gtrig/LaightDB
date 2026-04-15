@@ -109,6 +109,12 @@ The process speaks MCP over **stdin/stdout** (newline-delimited JSON-RPC). Your 
 | `list_collections` | List collection names |
 | `get_stats` | Database statistics |
 
+### Cursor integration MCP tool
+
+| Tool | Purpose |
+|------|---------|
+| `deploy_cursor_integration` | Install the bundled **Cursor skill** + **`sessionStart`** (memory policy) + **`beforeSubmitPrompt`** (prompt-based search) hooks under `project_root/.cursor` (optional `hooks.json` merge). See [Cursor rolling context](#cursor-rolling-context-skill--hook). |
+
 ### Graph / mindmap MCP tools
 
 | Tool | Purpose |
@@ -147,6 +153,26 @@ Add a server entry (paths adjusted to your clone):
 ```
 
 Restart Cursor after editing MCP settings. The exact file location depends on your Cursor version; use **Cursor Settings → MCP** or the documented `mcp.json` path for your OS.
+
+### Cursor rolling context (skill + hooks)
+
+To nudge the assistant toward **proactive** `search_context` at the start of work, **`store_context`** before wrapping up, and **context pulled from LaightDB when you send a chat prompt**—use the files under [`integrations/cursor/`](integrations/cursor/README.md):
+
+- **Manual:** copy the skill and hook scripts from `integrations/cursor/` into `.cursor/` as described there (includes **`sessionStart`** policy text and a **`beforeSubmitPrompt`** hook that calls **`search_context`** over streamable HTTP **`/mcp`**, using your prompt text as the query).
+- **Automatic (MCP):** after LaightDB MCP is connected, call the tool **`deploy_cursor_integration`** with `project_root` set to your workspace root (the directory that should contain `.cursor`). Arguments:
+  - `project_root` (required) — path to the project
+  - `overwrite_skill` (optional) — replace an existing skill file
+  - `merge_hooks` (optional, default **true**) — merge bundled hooks into `.cursor/hooks.json`; set `false` if you manage hooks yourself
+- **Shell + streamable HTTP MCP:** with LaightDB serving **`/mcp`**, run [`scripts/mcp-deploy-cursor-integration.sh`](scripts/mcp-deploy-cursor-integration.sh) and pass the workspace path (set **`LAIGHTDB_MCP_URL`** if not `http://127.0.0.1:8080/mcp`, e.g. dev MCP on **9090**).
+- **Same layout without MCP:** `go run ./integrations/cursor/cmd/deployhooks <project_root>` (bundled files only; no JSON-RPC).
+
+The **`sessionStart`** hook only needs **`jq`**. The **`beforeSubmitPrompt`** hook calls the **`search_context` MCP tool** over **streamable HTTP** at **`LAIGHTDB_MCP_URL`** (default `http://127.0.0.1:8080/mcp`), not `POST /v1/search`. It needs **`curl`**, **`jq`**, and a reachable **`/mcp`** endpoint (e.g. run LaightDB with **`LAIGHTDB_MCP_TRANSPORT=http`** so REST and MCP share the listener; optional `LAIGHTDB_API_TOKEN`). Pure **stdio** MCP in Cursor does not expose `/mcp` to the hook unless a separate HTTP LaightDB process is running.
+
+**Example prompt for the assistant**
+
+> Call `deploy_cursor_integration` with `project_root` set to `/absolute/path/to/my-project` and default hook merging. Then confirm which files were written under `.cursor/`.
+
+The tool response includes an `example_user_prompt` field you can reuse.
 
 ---
 

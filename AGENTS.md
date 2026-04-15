@@ -228,6 +228,7 @@ Auth data persisted as JSON in `{data_dir}/auth/` (users.json, tokens.json, sess
 - `delete_context` -- Remove context
 - `list_collections` -- List collections
 - `get_stats` -- Database stats (includes edge count)
+- `deploy_cursor_integration` -- Install Cursor rolling-context skill + hooks (`sessionStart` policy, `beforeSubmitPrompt` search) under `project_root/.cursor` (see `integrations/cursor/`)
 
 ### Graph / Mindmap MCP Tools
 

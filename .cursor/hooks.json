@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/laightdb-session-start.sh"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/laightdb-before-submit-prompt-search.sh"
+      }
+    ]
+  }
+}
