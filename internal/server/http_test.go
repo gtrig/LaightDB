@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gtrig/laightdb/internal/auth"
+	"github.com/gtrig/laightdb/internal/calllog"
 	"github.com/gtrig/laightdb/internal/context"
 	"github.com/gtrig/laightdb/internal/summarize"
 )
@@ -26,11 +27,12 @@ func newTestServer(t *testing.T) (*HTTPServer, *auth.FileAuthStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHTTPServer(st, as), as
+	cl := calllog.New(calllog.DefaultOptions())
+	return NewHTTPServer(st, as, cl), as
 }
 
 func testHandler(s *HTTPServer, as *auth.FileAuthStore) http.Handler {
-	return s.BuildHandler(auth.Middleware(as))
+	return s.BuildHandler(nil, auth.Middleware(as))
 }
 
 func TestHealth(t *testing.T) {

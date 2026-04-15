@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gtrig/laightdb/internal/auth"
+	"github.com/gtrig/laightdb/internal/calllog"
 	"github.com/gtrig/laightdb/internal/config"
 	lctx "github.com/gtrig/laightdb/internal/context"
 	"github.com/gtrig/laightdb/internal/embedding"
@@ -51,18 +52,24 @@ func Start() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	ms := mcp.NewServer(store)
-
 	if cfg.MCPTransport == "stdio" {
 		slog.Info("mcp stdio (no http)")
+		ms := mcp.NewServer(store, nil)
 		return ms.RunStdio(ctx)
 	}
 
 	rl := auth.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
 
-	hs := server.NewHTTPServer(store, authStore)
+	cl := calllog.New(calllog.Options{
+		MaxEntries:   cfg.AuditMaxEntries,
+		MaxBodyRunes: cfg.AuditMaxBodyBytes,
+	})
+	ms := mcp.NewServer(store, cl)
+
+	hs := server.NewHTTPServer(store, authStore, cl)
 	hs.Mux.Handle("/mcp", ms.StreamableHTTPHandler())
 	handler := hs.BuildHandler(
+		nil,
 		server.CORSMiddleware(cfg.CorsOrigin),
 		auth.RateLimitMiddleware(rl),
 		auth.Middleware(authStore),

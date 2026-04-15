@@ -121,6 +121,7 @@ export default function Layout() {
   // Open mode (no users yet): show Users so the first admin can be created without logging in.
   const showUsersNav = !authRequired || user?.role === "admin";
   const showStressNav = showUsersNav;
+  const showCallLogsNav = authRequired && user?.role === "admin";
   const showTokensNav = !!user;
   const showSettingsSection = showUsersNav || showTokensNav;
 
@@ -184,6 +185,15 @@ export default function Layout() {
             >
               <NavIcon d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               Stress test
+            </NavLink>
+          )}
+          {showCallLogsNav && (
+            <NavLink
+              to="/audit"
+              style={({ isActive }) => ({ ...baseLinkStyle, ...(isActive ? activeLinkExtra : {}) })}
+            >
+              <NavIcon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              MCP log
             </NavLink>
           )}
 

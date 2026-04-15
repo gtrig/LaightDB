@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gtrig/laightdb/internal/auth"
+	"github.com/gtrig/laightdb/internal/calllog"
 	"github.com/gtrig/laightdb/internal/context"
 )
 
@@ -13,13 +14,14 @@ import (
 type HTTPServer struct {
 	Store     *context.Store
 	AuthStore *auth.FileAuthStore
+	CallLog   *calllog.Store
 	Mux       *http.ServeMux
 }
 
-// NewHTTPServer registers v1 routes.
-func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPServer {
+// NewHTTPServer registers v1 routes. callLog may be nil (audit API and HTTP recording disabled).
+func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore, callLog *calllog.Store) *HTTPServer {
 	m := http.NewServeMux()
-	s := &HTTPServer{Store: store, AuthStore: authStore, Mux: m}
+	s := &HTTPServer{Store: store, AuthStore: authStore, CallLog: callLog, Mux: m}
 
 	// Context routes
 	m.HandleFunc("POST /v1/contexts", s.handlePostContexts)
@@ -68,12 +70,18 @@ func NewHTTPServer(store *context.Store, authStore *auth.FileAuthStore) *HTTPSer
 	m.HandleFunc("GET /v1/tokens", s.handleListTokens)
 	m.HandleFunc("DELETE /v1/tokens/{id}", s.handleRevokeToken)
 
+	m.HandleFunc("GET /v1/audit/calls", s.handleAuditCalls)
+
 	return s
 }
 
 // BuildHandler constructs the middleware chain. Called by launch after wiring.
-func (s *HTTPServer) BuildHandler(middlewares ...func(http.Handler) http.Handler) http.Handler {
-	var h http.Handler = s.Mux
+// If root is nil, s.Mux is used as the inner handler.
+func (s *HTTPServer) BuildHandler(root http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
+	if root == nil {
+		root = s.Mux
+	}
+	h := root
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		h = middlewares[i](h)
 	}

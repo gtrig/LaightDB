@@ -130,3 +130,21 @@ export interface StressReport {
   searches: StressPhaseStat;
   total_wall: number;
 }
+
+/** Row from GET /v1/audit/calls */
+export interface CallLogEntry {
+  id: string;
+  ts: string;
+  duration_ms: number;
+  channel: "mcp";
+  user_id?: string;
+  username?: string;
+  method?: string;
+  path?: string;
+  query?: string;
+  tool?: string;
+  status?: number;
+  ok?: boolean;
+  request?: string;
+  response?: string;
+}

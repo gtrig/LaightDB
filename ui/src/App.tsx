@@ -13,6 +13,7 @@ import StressPage from "./components/StressPage";
 import LoginPage from "./components/LoginPage";
 import UsersPage from "./components/UsersPage";
 import TokensPage from "./components/TokensPage";
+import CallLogsPage from "./components/CallLogsPage";
 
 const StorageExplorer3D = lazy(() => import("./components/StorageExplorer3D"));
 
@@ -59,6 +60,21 @@ function RequireUserForTokens({ children }: { children: React.ReactNode }) {
   return <Navigate to="/settings/users" replace />;
 }
 
+/** Call log UI: admin only when auth is active; hidden in open mode (API returns 403). */
+function RequireAdminWhenAuth({ children }: { children: React.ReactNode }) {
+  const { user, authRequired, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--on-surface-variant)" }}>
+        Loading…
+      </div>
+    );
+  }
+  if (!authRequired) return <Navigate to="/" replace />;
+  if (!user || user.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
 export default function App() {
   const { user, authRequired, loading } = useAuth();
 
@@ -94,6 +110,14 @@ export default function App() {
             <RequireAdminOrBootstrap>
               <StressPage />
             </RequireAdminOrBootstrap>
+          }
+        />
+        <Route
+          path="audit"
+          element={
+            <RequireAdminWhenAuth>
+              <CallLogsPage />
+            </RequireAdminWhenAuth>
           }
         />
         <Route

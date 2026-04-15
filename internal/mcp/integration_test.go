@@ -19,7 +19,7 @@ func TestMCPStoreSearchGetGate(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	srv := NewServer(store)
+	srv := NewServer(store, nil)
 	ctx := context.Background()
 	t1, t2 := mcp.NewInMemoryTransports()
 	if _, err := srv.MCPServer.Connect(ctx, t1, nil); err != nil {
@@ -97,7 +97,7 @@ func TestMCPDeployCursorIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	srv := NewServer(store)
+	srv := NewServer(store, nil)
 	ctx := context.Background()
 	t1, t2 := mcp.NewInMemoryTransports()
 	if _, err := srv.MCPServer.Connect(ctx, t1, nil); err != nil {

@@ -19,7 +19,7 @@ func newTestMCPSession(t *testing.T) (*mcp.ClientSession, *lctx.Store) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	srv := NewServer(store)
+	srv := NewServer(store, nil)
 	ctx := context.Background()
 	t1, t2 := mcp.NewInMemoryTransports()
 	if _, err := srv.MCPServer.Connect(ctx, t1, nil); err != nil {

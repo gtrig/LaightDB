@@ -30,6 +30,11 @@ type Config struct {
 
 	// CorsOrigin is the value for Access-Control-Allow-Origin (e.g. https://app.example.com). Empty disables CORS.
 	CorsOrigin string
+
+	// AuditMaxEntries caps in-memory MCP call log entries (ring buffer).
+	AuditMaxEntries int
+	// AuditMaxBodyBytes limits captured MCP tool input/response text (runes for Unicode safety in calllog).
+	AuditMaxBodyBytes int
 }
 
 // FromEnv loads configuration from environment variables only (no CLI flags).
@@ -50,6 +55,8 @@ func FromEnv() *Config {
 	cfg.DevMCPHTTPAddr = envOr("LAIGHTDB_DEV_MCP_HTTP_ADDR", "")
 	cfg.DevMCPSkipStore = envBool("LAIGHTDB_DEV_MCP_SKIP_STORE", false)
 	cfg.CorsOrigin = strings.TrimSpace(envOr("LAIGHTDB_CORS_ORIGIN", ""))
+	cfg.AuditMaxEntries = envInt("LAIGHTDB_AUDIT_MAX_ENTRIES", 500)
+	cfg.AuditMaxBodyBytes = envInt("LAIGHTDB_AUDIT_MAX_BODY_BYTES", 32*1024)
 	return cfg
 }
 

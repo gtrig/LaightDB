@@ -3,8 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"time"
 
 	cursorintegration "github.com/gtrig/laightdb/integrations/cursor"
+	"github.com/gtrig/laightdb/internal/calllog"
 	lctx "github.com/gtrig/laightdb/internal/context"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -78,8 +81,43 @@ type deployCursorInput struct {
 	MergeHooks     *bool  `json:"merge_hooks,omitempty" jsonschema:"if false, do not change hooks.json (default true)"`
 }
 
-func registerTools(s *mcp.Server, store *lctx.Store) {
-	mcp.AddTool(s, &mcp.Tool{
+func toolResultText(res *mcp.CallToolResult) string {
+	if res == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range res.Content {
+		if t, ok := c.(*mcp.TextContent); ok {
+			b.WriteString(t.Text)
+		}
+	}
+	return b.String()
+}
+
+func addToolLogged[In any](s *mcp.Server, log *calllog.Store, tool *mcp.Tool, fn func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, emptyOut, error)) {
+	if log == nil {
+		mcp.AddTool(s, tool, fn)
+		return
+	}
+	mcp.AddTool(s, tool, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, emptyOut, error) {
+		start := time.Now()
+		res, out, err := fn(ctx, req, in)
+		inB, _ := json.Marshal(in)
+		resp := toolResultText(res)
+		isErr := err != nil || (res != nil && res.IsError)
+		if err != nil {
+			if resp != "" {
+				resp += "; "
+			}
+			resp += "transport: " + err.Error()
+		}
+		log.RecordMCP(ctx, start, tool.Name, string(inB), resp, isErr, time.Since(start))
+		return res, out, err
+	})
+}
+
+func registerTools(s *mcp.Server, store *lctx.Store, log *calllog.Store) {
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "store_context",
 		Description: "Store text content with optional metadata and collection",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in storeInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -99,7 +137,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "search_context",
 		Description: "Hybrid full-text and vector search over stored context",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -130,7 +168,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "get_context",
 		Description: "Retrieve a stored context entry by id",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -155,7 +193,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "delete_context",
 		Description: "Delete a context entry by id",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -168,7 +206,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"ok":true}`}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "list_collections",
 		Description: "List collection names",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, emptyOut, error) {
@@ -183,7 +221,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "get_stats",
 		Description: "Database statistics",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, emptyOut, error) {
@@ -200,7 +238,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 
 	// --- Graph / Mindmap tools ---
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "link_context",
 		Description: "Create a directed edge between two context entries (mindmap relationship)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in linkInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -222,7 +260,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "unlink_context",
 		Description: "Remove a directed edge between two context entries",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in unlinkInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -236,7 +274,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "get_neighbors",
 		Description: "Get nodes connected to a given context entry via graph edges",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in neighborsInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -245,7 +283,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "get_subtree",
 		Description: "Return a mindmap subtree (directed BFS from a root node) as structured JSON",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in subtreeInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -271,7 +309,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "graph_search",
 		Description: "Hybrid search combining BM25, vector similarity, and graph proximity (3-signal RRF)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in graphSearchInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -304,7 +342,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "suggest_links",
 		Description: "Auto-discover missing relationships for a node using vector similarity",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in suggestLinksInput) (*mcp.CallToolResult, emptyOut, error) {
@@ -323,7 +361,7 @@ func registerTools(s *mcp.Server, store *lctx.Store) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, emptyOut{}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addToolLogged(s, log, &mcp.Tool{
 		Name:        "deploy_cursor_integration",
 		Description: "Install the LaightDB Cursor skill plus hooks (sessionStart memory policy + beforeSubmitPrompt LaightDB search) under project_root/.cursor (optional hooks.json merge)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in deployCursorInput) (*mcp.CallToolResult, emptyOut, error) {

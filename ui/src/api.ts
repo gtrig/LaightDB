@@ -11,6 +11,7 @@ import type {
   StressReport,
   StorageDiagnostics,
   GraphOverview,
+  CallLogEntry,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -125,6 +126,14 @@ export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
 }
 
 // --- Graph overview ---
+
+export async function listAuditCalls(limit?: number): Promise<CallLogEntry[]> {
+  const q = new URLSearchParams();
+  if (limit != null) q.set("limit", String(limit));
+  const qs = q.toString();
+  const data = await request<{ calls: CallLogEntry[] }>(`/v1/audit/calls${qs ? `?${qs}` : ""}`);
+  return data.calls ?? [];
+}
 
 export async function getGraphOverview(options?: {
   collection?: string;

@@ -116,6 +116,27 @@ async function tryFulfillSharedV1Route(route: Route): Promise<boolean> {
     return true;
   }
 
+  if (path === "/v1/audit/calls" && method === "GET") {
+    await fulfillJson(route, {
+      calls: [
+        {
+          id: "mock-log-1",
+          ts: "2020-01-15T12:00:00.000Z",
+          duration_ms: 3,
+          channel: "mcp",
+          user_id: "u-admin",
+          username: "admin",
+          tool: "get_stats",
+          status: 200,
+          ok: true,
+          request: "{}",
+          response: '{"entries":0}',
+        },
+      ],
+    });
+    return true;
+  }
+
   if (path === "/v1/collections" && method === "GET") {
     await fulfillJson(route, { collections: ["demo"] });
     return true;

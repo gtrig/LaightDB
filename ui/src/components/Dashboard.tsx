@@ -5,8 +5,9 @@ import ContentTypeBadge from "./ContentTypeBadge";
 import CollectionBadge from "./CollectionBadge";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, type CSSProperties } from "react";
-import { getContext } from "../api";
-import type { ContextEntry } from "../types";
+import { getContext, listAuditCalls } from "../api";
+import type { CallLogEntry, ContextEntry } from "../types";
+import { Link } from "react-router-dom";
 
 const cardStyle: CSSProperties = {
   flex: 1,
@@ -42,6 +43,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user, authRequired } = useAuth();
   const isAdmin = !authRequired || user?.role === "admin";
+  const showAuditPreview = authRequired && user?.role === "admin";
+  const { data: recentCalls, loading: auditLoading, error: auditError } = useApi(
+    () => (showAuditPreview ? listAuditCalls(10) : Promise.resolve([] as CallLogEntry[])),
+    [showAuditPreview]
+  );
 
   useEffect(() => {
     setLoadingRecent(true);
@@ -189,6 +195,83 @@ export default function Dashboard() {
           </tbody>
         </table>
       </div>
+
+      {showAuditPreview && (
+        <>
+          <h2
+            style={{
+              fontFamily: "var(--font-headline)",
+              fontSize: 16,
+              fontWeight: 700,
+              marginTop: 40,
+              marginBottom: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
+            Recent MCP activity
+            <Link
+              to="/audit"
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--primary)",
+                textDecoration: "none",
+              }}
+            >
+              View all
+            </Link>
+          </h2>
+          <p style={{ color: "var(--on-surface-variant)", marginBottom: 16, fontSize: 13 }}>
+            MCP tool calls (newest first).
+          </p>
+          <div style={{ background: "var(--surface-container-low)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+            {auditError && (
+              <div style={{ padding: 16, color: "var(--error)", fontSize: 13 }}>{auditError}</div>
+            )}
+            {!auditError && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Who</th>
+                    <th>Tool</th>
+                    <th style={{ textAlign: "right" }}>ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLoading && (!recentCalls || recentCalls.length === 0) && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", color: "var(--outline)", padding: 24 }}>
+                        Loading…
+                      </td>
+                    </tr>
+                  )}
+                  {!auditLoading && recentCalls && recentCalls.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", color: "var(--outline)", padding: 24 }}>
+                        No calls recorded yet
+                      </td>
+                    </tr>
+                  )}
+                  {recentCalls?.map((c) => (
+                    <tr key={c.id}>
+                      <td style={{ fontSize: 12, color: "var(--on-surface-variant)" }}>
+                        {new Date(c.ts).toLocaleString()}
+                      </td>
+                      <td style={{ fontSize: 12 }}>{c.username ?? "—"}</td>
+                      <td style={{ fontSize: 12 }}>{c.tool ?? "—"}</td>
+                      <td style={{ textAlign: "right", fontSize: 12 }}>{c.duration_ms}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
